@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Scan catalog{% endblock %}
+{% block content %}
+<h1>Every program you are eligible for, most reachable first</h1>
+<p class="muted">Reads the MySchools catalog ({{ catalog_size }} programs loaded) and parses the DOE's priority-group prose into applicants and offers for your group.</p>
+{% if let Some(message) = error %}<div class="error">{{ message }}</div>{% endif %}
+<form class="grid" method="get" action="/scan">
+  <div>
+    <label for="attrs">Eligibility attributes</label>
+    <input type="text" id="attrs" name="attrs" value="{{ attrs }}">
+    <div class="hint"><code>d15</code>, <code>d20</code>, <code>sibling</code>, <code>zoned</code>, <code>continuing</code>, <code>current_student</code>.</div>
+  </div>
+  <div>
+    <label for="lottery">Lottery number prefix (hex)</label>
+    <input type="text" id="lottery" name="lottery" value="{{ lottery }}">
+  </div>
+  <div>
+    <label for="frl"><input type="checkbox" id="frl" name="frl" value="1"{% if frl %} checked{% endif %}> FRL / ELL / temporary housing (Diversity in Admissions set-aside)</label>
+  </div>
+  <div><button type="submit">Scan</button></div>
+</form>
+{% if let Some(line) = lottery_line %}<p>{{ line }} {% if !csv_url.is_empty() %}<a href="{{ csv_url }}">Download CSV</a>{% endif %}</p>{% endif %}
+{% if !rows.is_empty() %}
+<table>
+  <thead>
+    <tr><th>Dist</th><th>Code</th><th>School / program</th><th>Method</th><th class="num">Seats</th><th class="num">Appl.</th><th>Your group</th><th class="num">Applied</th><th class="num">Offered</th><th class="num">Share</th><th>Reach</th></tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.district }}</td>
+      <td><code>{{ r.code }}</code></td>
+      <td>{{ r.school }} <span class="muted">/ {{ r.program }}</span></td>
+      <td>{{ r.method }}</td>
+      <td class="num">{{ r.seats }}</td>
+      <td class="num">{{ r.applicants }}</td>
+      <td>{{ r.group }}</td>
+      <td class="num">{{ r.applied }}</td>
+      <td class="num">{{ r.offered }}</td>
+      <td class="num">{{ r.share }}</td>
+      <td><span class="badge {{ r.reach_class }}">{{ r.reach }}</span></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="hint">Seats and applicants are for the whole program. "Your group" columns are the priority group you fall into: how many applied, how many got an offer including waitlist offers, and the share. Programs that rank by a screen, audition, or test show "by screen".</p>
+{% endif %}
+{% endblock %}

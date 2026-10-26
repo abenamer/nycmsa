@@ -1,0 +1,40 @@
+# Local deployment: the web app plus PostgreSQL on a named volume.
+#
+#   docker compose up --build
+#   open http://127.0.0.1:8080
+#
+# The database files live in the named volume `nycmsa_pgdata`, so
+# `docker compose down` and image rebuilds keep the runs. Never run
+# `docker compose down -v` against data you want to keep: `-v` deletes
+# the named volume. See docs/operations.md for backup and restore.
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: nycmsa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nycmsa}
+      POSTGRES_DB: nycmsa
+    volumes:
+      - nycmsa_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nycmsa -d nycmsa"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # The database port stays inside the Compose network.
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://nycmsa:${POSTGRES_PASSWORD:-nycmsa}@db:5432/nycmsa
+      RUST_LOG: info
+    ports:
+      # Loopback only: every endpoint is anonymous.
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+
+volumes:
+  nycmsa_pgdata:

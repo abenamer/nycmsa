@@ -1,0 +1,14 @@
+{
+  "_notes": [
+    "attributes: which priority-group requirements this student satisfies.",
+    "ranking: the application list in preference order. Programs not listed are not applied to.",
+    "mark_twain_percentile: null = unknown, drawn uniformly each trial. Otherwise a number in [0,1] giving the student's expected rank among test-takers (0 = best). Set to 0.25 to model 'top quarter'.",
+    "lottery_number: known hex prefix of the DOE lottery number (first 1-4 characters is enough). null = draw randomly each trial.",
+    "mark_twain_sd: trial-to-trial noise on that percentile, so the two talent areas are correlated but not identical."
+  ],
+  "lottery_number": "BD",
+  "attributes": ["d20", "d15", "mark_twain_test"],
+  "ranking": ["K187A", "K239SC", "K239CM", "K442S", "K443M", "K686A"],
+  "mark_twain_percentile": 0.10,
+  "mark_twain_sd": 0.10
+}

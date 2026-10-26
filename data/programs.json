@@ -1,0 +1,369 @@
+{
+  "_notes": [
+    "Figures are 'Seats and Demand Last Year' from MySchools screenshots taken 2026-10-26.",
+    "Each program lists priority groups in order. The student falls into the FIRST group they qualify for.",
+    "applicants/offers per group are last year's. 'fewer than 10' is entered as 5.",
+    "Diversity in Admissions (District 15) programs reserve 52% of seats for FRL/ELL/temporary-housing applicants. A non-FRL student competes for the other 48% against non-FRL applicants in their group, which is modelled as a separate sub-group here.",
+    "Offers per group sum to more than seats at most schools, so 'offers' includes waitlist offers. initial_offers is the estimated number matched in the initial round (seats allocated to the group); offers minus initial_offers is the waitlist offers. Per DOE, each waitlist gets a NEW random number, so waitlist chances are independent across schools and of the initial-round number."
+  ],
+  "programs": {
+    "K686A": {
+      "name": "Superintendent's Program",
+      "seats": 50,
+      "applicants": 235,
+      "type": "lottery",
+      "groups": [
+        {
+          "name": "continuing students",
+          "requires": [
+            "continuing_K686A"
+          ],
+          "applicants": 50,
+          "offers": 50,
+          "initial_offers": 50
+        },
+        {
+          "name": "NYC residents",
+          "requires": [],
+          "applicants": 180,
+          "offers": 5,
+          "initial_offers": 0
+        }
+      ],
+      "admissions_method": "Screened",
+      "_note": "MySchools lists this program as Screened: applicants are grouped by prior-year grades and the random number only breaks ties within a grade group. Modelled here as a lottery within the priority group, which is right only if the student is in the top grade group. Either way the offer rate is far below a BD number."
+    },
+    "K187A": {
+      "name": "Academy for Scientific Research",
+      "seats": 90,
+      "applicants": 717,
+      "type": "lottery",
+      "groups": [
+        {
+          "name": "District 20 students and residents",
+          "requires": [
+            "d20"
+          ],
+          "applicants": 680,
+          "offers": 90,
+          "initial_offers": 90
+        },
+        {
+          "name": "NYC residents",
+          "requires": [],
+          "applicants": 40,
+          "offers": 0,
+          "initial_offers": 0
+        }
+      ],
+      "admissions_method": "Screened",
+      "_note": "MySchools lists this program as Screened: applicants are grouped by prior-year grades and the random number only breaks ties within a grade group. Modelled here as a lottery within the priority group, which is right only if the student is in the top grade group. Either way the offer rate is far below a BD number."
+    },
+    "K239SC": {
+      "name": "Mark Twain I.S. 239 (Science)",
+      "seats": 27,
+      "applicants": 191,
+      "type": "screened",
+      "groups": [
+        {
+          "name": "NYC residents, ranked by talent test",
+          "requires": [
+            "mark_twain_test"
+          ],
+          "applicants": 190,
+          "offers": 30,
+          "initial_offers": 27
+        }
+      ],
+      "admissions_method": "Screened (talent test)"
+    },
+    "K239CM": {
+      "name": "Mark Twain I.S. 239 (Computer/Math)",
+      "seats": 101,
+      "applicants": 535,
+      "type": "screened",
+      "groups": [
+        {
+          "name": "NYC residents, ranked by talent test",
+          "requires": [
+            "mark_twain_test"
+          ],
+          "applicants": 540,
+          "offers": 110,
+          "initial_offers": 101
+        }
+      ],
+      "admissions_method": "Screened (talent test)"
+    },
+    "K442S": {
+      "name": "M.S. 442 School for Innovation",
+      "seats": 81,
+      "applicants": 494,
+      "type": "lottery",
+      "groups": [
+        {
+          "name": "siblings, FRL",
+          "requires": [
+            "sibling_K442S",
+            "frl"
+          ],
+          "applicants": 5,
+          "offers": 5,
+          "initial_offers": 5
+        },
+        {
+          "name": "siblings, non-FRL",
+          "requires": [
+            "sibling_K442S"
+          ],
+          "applicants": 5,
+          "offers": 5,
+          "initial_offers": 5
+        },
+        {
+          "name": "District 15 residents, FRL (52% set-aside)",
+          "requires": [
+            "d15",
+            "frl"
+          ],
+          "applicants": 50,
+          "offers": 40,
+          "initial_offers": 37
+        },
+        {
+          "name": "District 15 residents, non-FRL",
+          "requires": [
+            "d15"
+          ],
+          "applicants": 370,
+          "offers": 40,
+          "initial_offers": 34
+        },
+        {
+          "name": "NYC residents",
+          "requires": [],
+          "applicants": 60,
+          "offers": 0,
+          "initial_offers": 0
+        }
+      ],
+      "admissions_method": "Open"
+    },
+    "K443M": {
+      "name": "New Voices School of Academic & Creative Arts",
+      "seats": 142,
+      "applicants": 320,
+      "type": "lottery",
+      "groups": [
+        {
+          "name": "siblings, FRL",
+          "requires": [
+            "sibling_K443M",
+            "frl"
+          ],
+          "applicants": 5,
+          "offers": 5,
+          "initial_offers": 5
+        },
+        {
+          "name": "siblings, non-FRL",
+          "requires": [
+            "sibling_K443M"
+          ],
+          "applicants": 5,
+          "offers": 5,
+          "initial_offers": 5
+        },
+        {
+          "name": "District 15 residents, FRL (52% set-aside)",
+          "requires": [
+            "d15",
+            "frl"
+          ],
+          "applicants": 40,
+          "offers": 38,
+          "initial_offers": 38
+        },
+        {
+          "name": "District 15 residents, non-FRL",
+          "requires": [
+            "d15"
+          ],
+          "applicants": 230,
+          "offers": 140,
+          "initial_offers": 94
+        },
+        {
+          "name": "NYC residents",
+          "requires": [],
+          "applicants": 35,
+          "offers": 0,
+          "initial_offers": 0
+        }
+      ],
+      "admissions_method": "Open"
+    },
+    "K447M": {
+      "name": "Math & Science Exploratory (M.S. 447)",
+      "seats": 126,
+      "applicants": 235,
+      "type": "lottery",
+      "admissions_method": "Open",
+      "groups": [
+        {
+          "name": "siblings, FRL",
+          "requires": [
+            "sibling_K447M",
+            "frl"
+          ],
+          "applicants": 5,
+          "offers": 5,
+          "initial_offers": 5
+        },
+        {
+          "name": "siblings, non-FRL",
+          "requires": [
+            "sibling_K447M"
+          ],
+          "applicants": 5,
+          "offers": 5,
+          "initial_offers": 5
+        },
+        {
+          "name": "District 15 residents, FRL (52% set-aside)",
+          "requires": [
+            "d15",
+            "frl"
+          ],
+          "applicants": 30,
+          "offers": 20,
+          "initial_offers": 20
+        },
+        {
+          "name": "District 15 residents, non-FRL",
+          "requires": [
+            "d15"
+          ],
+          "applicants": 150,
+          "offers": 120,
+          "initial_offers": 96
+        },
+        {
+          "name": "NYC residents",
+          "requires": [],
+          "applicants": 60,
+          "offers": 0,
+          "initial_offers": 0
+        }
+      ]
+    },
+    "K051M": {
+      "name": "William Alexander (M.S. 51)",
+      "seats": 247,
+      "applicants": 454,
+      "type": "lottery",
+      "admissions_method": "Open",
+      "groups": [
+        {
+          "name": "siblings, FRL",
+          "requires": [
+            "sibling_K051M",
+            "frl"
+          ],
+          "applicants": 5,
+          "offers": 5,
+          "initial_offers": 5
+        },
+        {
+          "name": "siblings, non-FRL",
+          "requires": [
+            "sibling_K051M"
+          ],
+          "applicants": 5,
+          "offers": 5,
+          "initial_offers": 5
+        },
+        {
+          "name": "District 15 residents, FRL (52% set-aside)",
+          "requires": [
+            "d15",
+            "frl"
+          ],
+          "applicants": 120,
+          "offers": 114,
+          "initial_offers": 114
+        },
+        {
+          "name": "District 15 residents, non-FRL",
+          "requires": [
+            "d15"
+          ],
+          "applicants": 260,
+          "offers": 160,
+          "initial_offers": 118
+        },
+        {
+          "name": "NYC residents",
+          "requires": [],
+          "applicants": 60,
+          "offers": 0,
+          "initial_offers": 0
+        }
+      ]
+    },
+    "K088S": {
+      "name": "Park Slope Education Complex (J.H.S. 88)",
+      "seats": 228,
+      "applicants": 288,
+      "type": "lottery",
+      "admissions_method": "Open",
+      "groups": [
+        {
+          "name": "siblings, FRL",
+          "requires": [
+            "sibling_K088S",
+            "frl"
+          ],
+          "applicants": 5,
+          "offers": 5,
+          "initial_offers": 5
+        },
+        {
+          "name": "siblings, non-FRL",
+          "requires": [
+            "sibling_K088S"
+          ],
+          "applicants": 5,
+          "offers": 5,
+          "initial_offers": 5
+        },
+        {
+          "name": "District 15 residents, FRL",
+          "requires": [
+            "d15",
+            "frl"
+          ],
+          "applicants": 40,
+          "offers": 40,
+          "initial_offers": 40
+        },
+        {
+          "name": "District 15 residents, non-FRL",
+          "requires": [
+            "d15"
+          ],
+          "applicants": 170,
+          "offers": 170,
+          "initial_offers": 170
+        },
+        {
+          "name": "NYC residents",
+          "requires": [],
+          "applicants": 70,
+          "offers": 0,
+          "initial_offers": 0
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,10 @@
+# cargo-audit configuration. Each ignored advisory needs a recorded reason
+# (REAS-SEC-001); review the list at every dependency update.
+[advisories]
+ignore = [
+    # rsa 0.9 (Marvin timing side channel). The crate is in Cargo.lock only
+    # as an optional dependency of sqlx-mysql, which this package does not
+    # enable; `cargo tree -i rsa` prints nothing for the build target, so
+    # no rsa code is compiled or linked. No fixed rsa release exists.
+    "RUSTSEC-2023-0071",
+]

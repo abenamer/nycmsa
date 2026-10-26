@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}NYC MS admissions{% endblock %} · nycmsa</title>
+<style>
+  :root { --ink: #1b1f24; --muted: #5c6670; --line: #d9dee3; --accent: #0b5fff; --bg: #fff; --soft: #f4f6f8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: var(--ink); background: var(--bg); }
+  header { border-bottom: 1px solid var(--line); background: var(--soft); }
+  header .wrap { display: flex; gap: 1.2rem; align-items: baseline; padding: .8rem 1rem; }
+  header a { color: var(--ink); text-decoration: none; }
+  header a.brand { font-weight: 700; }
+  header nav a { color: var(--muted); margin-right: 1rem; }
+  main { max-width: 1180px; margin: 0 auto; padding: 1rem; }
+  h1 { font-size: 1.4rem; margin: .4rem 0 .8rem; }
+  h2 { font-size: 1.1rem; margin: 1.4rem 0 .5rem; }
+  p.muted, .muted { color: var(--muted); }
+  form.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .8rem 1rem; align-items: end; }
+  form.grid .wide { grid-column: 1 / -1; }
+  label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: .2rem; }
+  input[type=text], input[type=number], select { width: 100%; padding: .45rem .5rem; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+  button { padding: .55rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+  table { border-collapse: collapse; width: 100%; margin: .6rem 0 1rem; font-size: .92rem; }
+  th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .error { background: #fff1f0; border: 1px solid #ffa39e; color: #a8071a; padding: .6rem .8rem; border-radius: 6px; margin: .6rem 0; }
+  .badge { display: inline-block; padding: .1rem .45rem; border-radius: 999px; font-size: .8rem; white-space: nowrap; }
+  .badge.good { background: #e6f7ec; color: #0a6b2e; }
+  .badge.likely { background: #e8f1ff; color: #0b3d91; }
+  .badge.maybe { background: #fff7e0; color: #8a5a00; }
+  .badge.no { background: #fdeceb; color: #8d1d1d; }
+  .badge.neutral { background: var(--soft); color: var(--muted); }
+  code { background: var(--soft); padding: .05rem .3rem; border-radius: 4px; }
+  dl.summary { display: grid; grid-template-columns: max-content max-content; gap: .3rem 1.2rem; }
+  dl.summary dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .hint { font-size: .8rem; color: var(--muted); margin-top: .15rem; }
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <a class="brand" href="/">nycmsa</a>
+  <nav>
+    <a href="/">Simulate</a>
+    <a href="/scan">Scan catalog</a>
+    <a href="/programs">Programs</a>
+    <a href="/api/runs">API</a>
+  </nav>
+</div></header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

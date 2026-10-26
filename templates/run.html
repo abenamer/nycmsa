@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Run #{{ id }}{% endblock %}
+{% block content %}
+<h1>Run #{{ id }}</h1>
+<p class="muted">{{ created_at }} · {{ parameters_line }} · <a href="/api/runs/{{ id }}">JSON</a></p>
+<p>Student attributes: <code>{{ attributes }}</code></p>
+{% if let Some(line) = lottery_line %}<p>{{ line }}</p>{% endif %}
+{% if let Some(line) = talent_line %}<p>{{ line }}</p>{% endif %}
+
+<table>
+  <thead>
+    <tr><th class="num">#</th><th>Code</th><th>Program</th><th>Your priority group</th><th>Modelled as</th><th class="num">Init%</th><th class="num">WL%</th><th class="num">P(initial)</th><th class="num">P(waitlist)</th><th class="num">P(any)</th></tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td class="num">{{ r.rank }}</td>
+      <td><code>{{ r.code }}</code></td>
+      <td>{{ r.name }}</td>
+      <td>{% if let Some(g) = r.group %}{{ g }}{% else %}<em class="muted">not eligible</em>{% endif %}</td>
+      <td>{{ r.selection }}</td>
+      <td class="num">{{ r.init_rate }}</td>
+      <td class="num">{{ r.wl_rate }}</td>
+      <td class="num">{{ r.p_initial }}</td>
+      <td class="num">{{ r.p_waitlist }}</td>
+      <td class="num">{{ r.p_any }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="hint">Init% = share of your group matched in the initial round last year. WL% = share of the remaining group reached by the waitlist. P(waitlist) counts only programs ranked above the initial match.</p>
+
+<h2>Summary</h2>
+<dl class="summary">
+{% for line in summary %}
+  <dt>{{ line.label }}</dt><dd>{{ line.value }}</dd>
+{% endfor %}
+</dl>
+<p><a href="/">Run another</a></p>
+{% endblock %}
