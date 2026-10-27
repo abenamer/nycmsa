@@ -163,6 +163,24 @@ Same environment. No Rust code changed.
 | Favicon | An inline SVG data URI in `templates/base.html`, so no static file route is needed; the browser check confirms the `link rel="icon"` resolves to an SVG the page can load |
 | "About" notice | On the home page and in every page's footer: not a DOE website, built by a parent for his own family, nothing official, link to the code |
 
+## Local evidence: 2026-10-27 (lottery number wording)
+
+Same environment. Wording only: the hint under the lottery question on
+the questions and scan pages, the README, and the domain model now say
+that the NYC Department of Education assigns the random number and that
+MySchools is where a family sees it, with a link to the DOE's page on
+random numbers in admissions. That page was fetched through the
+environment's proxy and read; it states that each applicant is assigned
+a random number once they begin an application, that middle school
+applicants can view it in MySchools under "Edit Profile" after they
+start the application, that it is a UUID sorted `0` to `9` then `A` to
+`F`, and that applicants receive a new random number for each waitlist.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo check --all-targets`, `cargo test --locked --test http_api` | Passed |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+
 ## Remote evidence
 
 | Revision | Run | Outcome |
