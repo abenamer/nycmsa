@@ -5,7 +5,12 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use crate::application::{CatalogDownloader, CatalogSnapshot, DistrictFilter, DownloadError};
+use crate::application::{
+    CatalogDownloader, CatalogSnapshot, DistrictFilter, DownloadError, ProgramDetails,
+    ProgramDetailsDownloader,
+};
+
+use super::myschools::program_details_from_document;
 
 /// Middle school admissions process on MySchools.
 pub const DEFAULT_BASE_URL: &str = "https://www.myschools.nyc/en/api/v2/schools/process/6/";
@@ -81,5 +86,35 @@ impl CatalogDownloader for MySchoolsApiClient {
             }
         }
         Ok(snapshot)
+    }
+}
+
+impl ProgramDetailsDownloader for MySchoolsApiClient {
+    async fn download(&self, school_id: u64) -> Result<Vec<ProgramDetails>, DownloadError> {
+        let url = format!("{}{school_id}/", self.base_url);
+        let response = self
+            .client
+            .get(&url)
+            .header(reqwest::header::ACCEPT, "application/json")
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)
+            .map_err(|e| DownloadError::Request {
+                url: url.clone(),
+                reason: e.to_string(),
+            })?;
+        let document =
+            response
+                .json::<serde_json::Value>()
+                .await
+                .map_err(|e| DownloadError::Malformed {
+                    url: url.clone(),
+                    reason: e.to_string(),
+                })?;
+        tokio::time::sleep(self.page_delay).await;
+        program_details_from_document(&document).map_err(|e| DownloadError::Malformed {
+            url,
+            reason: e.to_string(),
+        })
     }
 }

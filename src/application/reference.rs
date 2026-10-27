@@ -4,12 +4,13 @@
 
 use std::fmt;
 
-use crate::domain::{ProgramDefinitions, Student, TestResults};
+use crate::domain::{classify_profile, ProgramDefinitions, ProgramProfile, Student, TestResults};
 
 use super::download::DistrictFilter;
 use super::ports::{
-    CatalogDownloader, CatalogSnapshot, CatalogStore, Clock, DownloadError, ProgramStore,
-    RepositoryError, Stored, StudentDefaultsStore, TestResultsDownloader, TestResultsStore,
+    CatalogDownloader, CatalogSnapshot, CatalogStore, Clock, DownloadError, ProfileStore,
+    ProgramDetailsDownloader, ProgramStore, RepositoryError, Stored, StudentDefaultsStore,
+    TestResultsDownloader, TestResultsStore,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -78,6 +79,100 @@ impl<D: TestResultsDownloader, S: TestResultsStore, C: Clock> RefreshTestResults
     }
 }
 
+/// Looks up every school in the latest catalog snapshot, classifies each
+/// program from its texts, and stores the profiles as a new snapshot.
+pub struct RefreshProfiles<D, S, C> {
+    downloader: D,
+    store: S,
+    clock: C,
+}
+
+impl<D: ProgramDetailsDownloader, S: CatalogStore + ProfileStore, C: Clock>
+    RefreshProfiles<D, S, C>
+{
+    pub fn new(downloader: D, store: S, clock: C) -> Self {
+        Self {
+            downloader,
+            store,
+            clock,
+        }
+    }
+
+    /// Returns the number of profiles stored. `progress` is called after
+    /// each school with the count so far and the total.
+    pub async fn execute(
+        &self,
+        source: &str,
+        mut progress: impl FnMut(usize, usize),
+    ) -> Result<usize, ReferenceError> {
+        let catalog = self
+            .store
+            .latest_catalog()
+            .await?
+            .ok_or(ReferenceError::Missing("catalog snapshot"))?;
+        let ids = catalog.value.school_ids();
+        let mut profiles = Vec::new();
+        for (done, id) in ids.iter().enumerate() {
+            for details in self.downloader.download(*id).await? {
+                let (scores, evidence) = classify_profile(&details.texts, &details.method);
+                profiles.push(ProgramProfile {
+                    code: details.code,
+                    dbn: details.dbn,
+                    program_name: details.program_name,
+                    school_name: details.school_name,
+                    method: details.method,
+                    description: details.description,
+                    overview: details.overview,
+                    academic_opportunities: details.academic_opportunities,
+                    art_courses: details.art_courses,
+                    language_classes: details.language_classes,
+                    scores,
+                    evidence,
+                });
+            }
+            progress(done + 1, ids.len());
+        }
+        self.store
+            .save_profiles(&profiles, source, self.clock.now())
+            .await?;
+        Ok(profiles.len())
+    }
+}
+
+/// Re-runs the classification rules on the latest stored profiles and
+/// stores the result as a new snapshot, without a download.
+pub struct ReclassifyProfiles<S, C> {
+    store: S,
+    clock: C,
+}
+
+impl<S: ProfileStore, C: Clock> ReclassifyProfiles<S, C> {
+    pub fn new(store: S, clock: C) -> Self {
+        Self { store, clock }
+    }
+
+    pub async fn execute(&self) -> Result<usize, ReferenceError> {
+        let latest = self
+            .store
+            .latest_profiles()
+            .await?
+            .ok_or(ReferenceError::Missing("program profiles"))?;
+        let profiles: Vec<ProgramProfile> = latest
+            .value
+            .into_iter()
+            .map(ProgramProfile::reclassified)
+            .collect();
+        self.store
+            .save_profiles(
+                &profiles,
+                &format!("{} (reclassified)", latest.source),
+                self.clock.now(),
+            )
+            .await?;
+        Ok(profiles.len())
+    }
+}
+
 /// Stores the hand-entered programs and the form defaults read from the
 /// seed files.
 pub struct ImportSeeds<S, C> {
@@ -115,20 +210,23 @@ pub struct ReferenceData {
     pub results: Stored<TestResults>,
     pub programs: Stored<ProgramDefinitions>,
     pub student: Stored<Student>,
+    pub profiles: Stored<Vec<ProgramProfile>>,
 }
 
 impl fmt::Display for ReferenceData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "catalog: {} schools ({}); scores: {} schools ({}); programs: {} ({}); defaults ({})",
+            "catalog: {} schools ({}); scores: {} schools ({}); programs: {} ({}); defaults ({}); profiles: {} ({})",
             self.catalog.value.len(),
             self.catalog.source,
             self.results.value.len(),
             self.results.source,
             self.programs.value.len(),
             self.programs.source,
-            self.student.source
+            self.student.source,
+            self.profiles.value.len(),
+            self.profiles.source
         )
     }
 }
@@ -140,6 +238,7 @@ pub struct ReferenceInventory {
     pub results: bool,
     pub programs: bool,
     pub student: bool,
+    pub profiles: bool,
 }
 
 /// Reads the latest snapshots. Every set must exist.
@@ -149,7 +248,7 @@ pub struct LoadReferenceData<S> {
 
 impl<S> LoadReferenceData<S>
 where
-    S: CatalogStore + TestResultsStore + ProgramStore + StudentDefaultsStore,
+    S: CatalogStore + TestResultsStore + ProgramStore + StudentDefaultsStore + ProfileStore,
 {
     pub fn new(store: S) -> Self {
         Self { store }
@@ -161,6 +260,7 @@ where
             results: self.store.latest_test_results().await?.is_some(),
             programs: self.store.latest_programs().await?.is_some(),
             student: self.store.latest_student_defaults().await?.is_some(),
+            profiles: self.store.latest_profiles().await?.is_some(),
         })
     }
 
@@ -186,6 +286,11 @@ where
                 .latest_student_defaults()
                 .await?
                 .ok_or(ReferenceError::Missing("student defaults"))?,
+            profiles: self
+                .store
+                .latest_profiles()
+                .await?
+                .ok_or(ReferenceError::Missing("program profiles"))?,
         })
     }
 }

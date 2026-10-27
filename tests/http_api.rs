@@ -32,6 +32,7 @@ fn app() -> Router {
         bundled.student,
         bundled.catalog,
         bundled.results,
+        bundled.profiles,
         &limits,
     );
     router(state, &limits)
@@ -276,6 +277,33 @@ async fn scan_page_reports_a_bad_lottery_prefix() {
         .expect("response");
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert!(body_text(response).await.contains("must be hexadecimal"));
+}
+
+#[tokio::test]
+async fn picker_and_profiles_pages_render() {
+    let response = app().oneshot(get("/pick")).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let html = body_text(response).await;
+    assert!(html.contains("data-code=\"K442S\""));
+    assert!(html.contains("Dual language"), "focus chips");
+    assert!(
+        html.contains("guessed from the name"),
+        "no profiles loaded in tests"
+    );
+    let response = app().oneshot(get("/profiles")).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(body_text(response)
+        .await
+        .contains("No profiles for these districts"));
+    let response = app()
+        .oneshot(get("/?ranking=K443M%2CK442S"))
+        .await
+        .expect("response");
+    let html = body_text(response).await;
+    assert!(
+        html.contains("value=\"K443M, K442S\""),
+        "ranking prefilled from the picker"
+    );
 }
 
 #[tokio::test]

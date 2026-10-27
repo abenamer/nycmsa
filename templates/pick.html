@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Choose programs{% endblock %}
+{% block content %}
+<h1>Choose the programs to rank</h1>
+<p class="muted">Click a program code to add it to your list. Drag order with the arrows, remove with ×. Your list is remembered in this browser until you reset it.</p>
+
+<div class="picker">
+<div class="picker-list">
+  <h2>Your list <span class="muted" id="count"></span></h2>
+  <ol id="chosen" class="chosen"></ol>
+  <p class="muted" id="empty-note">Nothing chosen yet.</p>
+  <p>
+    <a id="use" class="button" href="/">Use this list</a>
+    <button type="button" id="reset" class="secondary">Reset list</button>
+  </p>
+  <p class="hint">The list goes to the questions page in this order. You can rank as many programs as the DOE allows; the DOE's own list has a limit, check the current application.</p>
+</div>
+
+<div class="picker-main">
+<fieldset>
+  <legend>Search</legend>
+  <input type="text" id="search" placeholder="School, program, or code" autocomplete="off">
+</fieldset>
+<fieldset>
+  <legend>District</legend>
+  <div class="chips" id="district-chips">
+  {% for c in district_chips %}
+    <label class="chip"><input type="checkbox" name="district" value="{{ c.value }}"><span>{{ c.label }} <small class="muted">{{ c.borough }}</small></span></label>
+  {% endfor %}
+  </div>
+</fieldset>
+<fieldset>
+  <legend>Kind of program <span class="hint">({% if profiled > 0 %}from each program's MySchools page, see <a href="/profiles">what each program is about</a>{% else %}guessed from the name; see caveats{% endif %})</span></legend>
+  <div class="chips" id="focus-chips">
+  {% for c in focus_chips %}
+    <label class="chip"><input type="checkbox" name="focus" value="{{ c.value }}"><span>{{ c.label }}</span></label>
+  {% endfor %}
+  </div>
+</fieldset>
+<fieldset>
+  <legend>How it picks students</legend>
+  <div class="chips">
+    <label class="chip"><input type="radio" name="picks" value="any" checked><span>Any</span></label>
+    <label class="chip"><input type="radio" name="picks" value="lottery"><span>Lottery number</span></label>
+    <label class="chip"><input type="radio" name="picks" value="screened"><span>Screened test</span></label>
+  </div>
+</fieldset>
+<p class="muted"><span id="shown"></span> programs shown. {% if let Some(y) = scores_year %}ELA and Math are the share of the school's students at proficiency on the {{ y }} state tests.{% endif %}</p>
+<table id="programs">
+  <thead><tr><th>Code</th><th>School / program</th><th>District</th><th>Picks by</th><th>Kind</th><th class="num">Seats</th><th class="num">Applicants</th><th class="num">ELA</th><th class="num">Math</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr data-code="{{ r.code }}" data-district="{{ r.district }}" data-focus="{{ r.focus_slugs }}" data-screened="{{ r.screened }}" data-text="{{ r.school }} {{ r.program }} {{ r.code }}">
+      <td><button type="button" class="code" data-code="{{ r.code }}">{{ r.code }}</button></td>
+      <td>{{ r.school }}<div class="hint">{{ r.program }}</div></td>
+      <td>{{ r.district }} <small class="muted">{{ r.borough }}</small></td>
+      <td>{{ r.picks_by }}</td>
+      <td><a href="/profiles?district={{ r.district }}#{{ r.code }}" class="muted">{{ r.focus_labels }}</a></td>
+      <td class="num">{{ r.seats }}</td>
+      <td class="num">{{ r.applicants }}</td>
+      <td class="num">{{ r.ela }}</td>
+      <td class="num">{{ r.math }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+</div>
+{% include "caveats.html" %}
+<script>
+(function () {
+  var KEY = 'nycmsa.ranking', FKEY = 'nycmsa.pickerFilters';
+  var rows = Array.prototype.slice.call(document.querySelectorAll('#programs tbody tr'));
+  var names = {};
+  rows.forEach(function (r) { names[r.dataset.code] = r.cells[1].firstChild.textContent + ' · ' + r.cells[1].querySelector('.hint').textContent; });
+  function load(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch (e) { return fallback; } }
+  function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} }
+  var chosen = load(KEY, []).filter(function (c) { return names[c]; });
+
+  function renderChosen() {
+    var ol = document.getElementById('chosen');
+    ol.innerHTML = '';
+    chosen.forEach(function (code, i) {
+      var li = document.createElement('li');
+      li.innerHTML = '<span class="pick-code">' + code + '</span> <span class="pick-name"></span>' +
+        '<span class="pick-tools"><button type="button" data-move="-1" title="Move up">▲</button>' +
+        '<button type="button" data-move="1" title="Move down">▼</button>' +
+        '<button type="button" data-remove="1" title="Remove" class="x">×</button></span>';
+      li.querySelector('.pick-name').textContent = names[code];
+      li.querySelector('[data-move="-1"]').onclick = function () { move(i, -1); };
+      li.querySelector('[data-move="1"]').onclick = function () { move(i, 1); };
+      li.querySelector('[data-remove]').onclick = function () { chosen.splice(i, 1); update(); };
+      ol.appendChild(li);
+    });
+    document.getElementById('empty-note').style.display = chosen.length ? 'none' : '';
+    document.getElementById('count').textContent = chosen.length ? '(' + chosen.length + ')' : '';
+    document.getElementById('use').href = '/?ranking=' + encodeURIComponent(chosen.join(','));
+    rows.forEach(function (r) { r.classList.toggle('picked', chosen.indexOf(r.dataset.code) >= 0); });
+  }
+  function move(i, d) { var j = i + d; if (j < 0 || j >= chosen.length) return; var t = chosen[i]; chosen[i] = chosen[j]; chosen[j] = t; update(); }
+  function update() { save(KEY, chosen); renderChosen(); }
+
+  function checked(name) { return Array.prototype.slice.call(document.querySelectorAll('input[name="' + name + '"]:checked')).map(function (i) { return i.value; }); }
+  function applyFilters() {
+    var districts = checked('district'), focus = checked('focus'), picks = checked('picks')[0] || 'any';
+    var q = document.getElementById('search').value.trim().toLowerCase();
+    var shown = 0;
+    rows.forEach(function (r) {
+      var ok = true;
+      if (districts.length && districts.indexOf('d' + r.dataset.district) < 0) ok = false;
+      if (ok && focus.length) { var f = r.dataset.focus.split(' '); ok = focus.some(function (x) { return f.indexOf(x) >= 0; }); }
+      if (ok && picks === 'lottery' && r.dataset.screened === 'true') ok = false;
+      if (ok && picks === 'screened' && r.dataset.screened !== 'true') ok = false;
+      if (ok && q && r.dataset.text.toLowerCase().indexOf(q) < 0) ok = false;
+      r.style.display = ok ? '' : 'none';
+      if (ok) shown++;
+    });
+    document.getElementById('shown').textContent = shown;
+    save(FKEY, { districts: districts, focus: focus, picks: picks, q: q });
+  }
+  var filters = load(FKEY, null);
+  if (filters) {
+    document.querySelectorAll('input[name="district"], input[name="focus"]').forEach(function (i) {
+      i.checked = (filters[i.name === 'district' ? 'districts' : 'focus'] || []).indexOf(i.value) >= 0;
+    });
+    document.querySelectorAll('input[name="picks"]').forEach(function (i) { i.checked = i.value === (filters.picks || 'any'); });
+    document.getElementById('search').value = filters.q || '';
+  }
+  document.querySelectorAll('.picker-main input').forEach(function (i) { i.addEventListener('input', applyFilters); i.addEventListener('change', applyFilters); });
+  document.querySelectorAll('button.code').forEach(function (b) {
+    b.onclick = function () { var c = b.dataset.code; if (chosen.indexOf(c) < 0) { chosen.push(c); update(); } };
+  });
+  document.getElementById('reset').onclick = function () {
+    chosen = []; try { localStorage.removeItem(KEY); localStorage.removeItem(FKEY); } catch (e) {}
+    document.querySelectorAll('.picker-main input[type="checkbox"]').forEach(function (i) { i.checked = false; });
+    document.querySelector('input[name="picks"][value="any"]').checked = true;
+    document.getElementById('search').value = '';
+    renderChosen(); applyFilters();
+  };
+  renderChosen(); applyFilters();
+})();
+</script>
+{% endblock %}

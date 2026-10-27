@@ -87,6 +87,20 @@ The cross-check is a one-time local result for the workbooks published on
 2026-08-03. Repeat it after each refresh; the reader detects a missing
 sheet or column but not a renamed value column.
 
+## Local evidence: 2026-10-27 (program picker and profiles)
+
+Same environment.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt`, `clippy -D warnings`, `cargo test` | Passed: 104 unit tests, 14 HTTP tests; 2 ignored |
+| `cargo test --test postgres_reference --test postgres_runs -- --ignored` | Passed, including the profile snapshot round trip |
+| `nycmsa fetch-profiles` against MySchools | Passed in 4 m 28 s: 477 school lookups, 784 program profiles stored; 782 have a school overview, 36 a program description |
+| `nycmsa reclassify-profiles` | Passed: new snapshot in seconds |
+| Tag distribution after reclassification | Zoned 236, Arts 216, STEM 112, Humanities 62, Dual language 59, Honors 39, Careers 6; 234 programs General only. The first rule set, which matched substrings and treated the overview like program text, had tagged 615 programs Arts and 553 Humanities; see the domain model for the fix. |
+| Pages | Passed: `/pick` and `/profiles` render from the database; the picker's ranking reaches the questions page through `?ranking=` |
+| Picker and form memory in the browser | Not run: no browser automation in this check. The JavaScript is small and hand-reviewed; a browser test is a gap. |
+
 ## Remote evidence
 
 None yet. After the first push, record here the GitHub Actions run that

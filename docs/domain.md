@@ -167,6 +167,48 @@ informational; the simulation does not use them. A suppressed figure
 (groups of five or fewer tested students, shown as `s` by the DOE) reads
 as unknown.
 
+## Program profiles
+
+MySchools publishes no categories for middle school programs. The server
+therefore looks up every school's MySchools detail page and keeps, per
+program, the program description, the school overview, the course lists,
+and the admissions method as a `ProgramProfile`. `classify_profile`
+assigns one or more `ProgramFocus` tags (STEM, Arts, Dual language,
+Humanities & leadership, Business & careers, Honors & accelerated, Zoned,
+General) by matching keyword lists against whole words of the program's
+own texts: the program name, the program description, the school name,
+and the admissions method (auditions and talent tests give Arts, language
+criteria gives Dual language, zone priority gives Zoned). Keywords are
+whole words, word stems such as `scien`, or two-word phrases such as
+`dual language`, so `part` never matches `art`.
+
+Every match carries the weight of the text it was found in:
+
+| Text | Weight |
+| --- | --- |
+| Admissions method | 0.7 |
+| Program name | 0.6 |
+| Program description | 0.5 |
+| School name | 0.5 |
+| Academic opportunities | 0.25 |
+| School overview | 0.15 |
+
+A kind's confidence is `1 - Π(1 - weight)` over its distinct matches, so
+one strong match or several weak ones both raise it: a program name
+match alone gives 60%, five different STEM words in the overview give
+56%, one overview word gives 15%. A kind is a tag at 50% or more
+(`TAG_THRESHOLD`); a program with no tag is `General`. The school
+overview weighs little because it describes the whole school: a first
+version that treated it like the program texts tagged most programs with
+four kinds at once. Course lists are shown but not matched for the same
+reason.
+
+The profiles page shows each tag with its confidence, the weaker signals
+below the threshold, and every match with its weight, so a parent can
+judge the tag. A program without a stored profile is tagged from its
+names and method alone. `reclassify-profiles` re-runs the rules on the
+stored texts; the weights and keyword lists live in `domain::catalog`.
+
 ## Caveats shown to users
 
 Each results page carries the same caveats: the model is a simplified
@@ -174,7 +216,8 @@ cutoff view of the match; every figure is last year's as reported on
 MySchools; program figures are read from rounded prose by machine and
 nine were entered by hand; test scores describe the school and are read
 from the DOE's spreadsheets by machine; screens are approximated by the
-test-placement answer; the waitlist rule is an assumption.
+test-placement answer; the waitlist rule is an assumption; and the kind-of-program tags come
+from word matching, with the evidence shown.
 
 ## Catalog scan
 

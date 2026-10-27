@@ -4,7 +4,10 @@ use std::fmt;
 use std::num::NonZeroU64;
 use std::time::SystemTime;
 
-use crate::domain::{DistrictCode, ProgramDefinitions, Report, Student, TestResults};
+use crate::domain::ProgramProfile;
+use crate::domain::{
+    DistrictCode, ProfileText, ProgramCode, ProgramDefinitions, Report, Student, TestResults,
+};
 
 use super::download::DistrictFilter;
 
@@ -96,6 +99,14 @@ pub struct CatalogSnapshot {
 impl CatalogSnapshot {
     pub fn len(&self) -> usize {
         self.schools.len()
+    }
+
+    /// The MySchools school ids in the snapshot, for detail lookups.
+    pub fn school_ids(&self) -> Vec<u64> {
+        self.schools
+            .iter()
+            .filter_map(|s| s.get("id").and_then(serde_json::Value::as_u64))
+            .collect()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -243,4 +254,41 @@ pub trait StudentDefaultsStore {
         recorded_at: SystemTime,
     ) -> Result<(), RepositoryError>;
     async fn latest_student_defaults(&self) -> Result<Option<Stored<Student>>, RepositoryError>;
+}
+
+/// Everything MySchools says about one program, before classification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProgramDetails {
+    pub code: ProgramCode,
+    pub dbn: String,
+    pub program_name: String,
+    pub school_name: String,
+    pub method: String,
+    pub description: String,
+    pub overview: String,
+    pub academic_opportunities: String,
+    pub art_courses: String,
+    pub language_classes: String,
+    /// The texts the classification reads.
+    pub texts: Vec<ProfileText>,
+}
+
+/// Outbound port: the detail document of one school, as program details.
+pub trait ProgramDetailsDownloader {
+    // Awaited on the main task; no `Send` bound is needed.
+    #[allow(async_fn_in_trait)]
+    async fn download(&self, school_id: u64) -> Result<Vec<ProgramDetails>, DownloadError>;
+}
+
+/// Outbound port: versioned program profiles.
+#[async_trait::async_trait]
+pub trait ProfileStore {
+    async fn save_profiles(
+        &self,
+        profiles: &[ProgramProfile],
+        source: &str,
+        recorded_at: SystemTime,
+    ) -> Result<(), RepositoryError>;
+    async fn latest_profiles(&self)
+        -> Result<Option<Stored<Vec<ProgramProfile>>>, RepositoryError>;
 }

@@ -37,7 +37,7 @@ use super::dto::{
     DEFAULT_TRIALS,
 };
 use choices::{OutlookChoice, TalentTestChoice, WaitlistChoice};
-use views::{HomePage, ProgramsPage, RunPage, ScanPage};
+use views::{HomePage, PickerPage, ProfilesPage, ProgramsPage, RunPage, ScanPage};
 
 /// Request limits (REAS-SEC-001).
 #[derive(Debug, Clone, Copy)]
@@ -61,12 +61,45 @@ impl Default for HttpLimits {
     }
 }
 
+/// The stored program profiles, by code.
+pub struct ProfileBook {
+    by_code: std::collections::BTreeMap<String, crate::domain::ProgramProfile>,
+}
+
+impl ProfileBook {
+    pub fn new(profiles: Vec<crate::domain::ProgramProfile>) -> Self {
+        Self {
+            by_code: profiles
+                .into_iter()
+                .map(|p| (p.code.as_str().to_owned(), p))
+                .collect(),
+        }
+    }
+
+    pub fn get(&self, code: &str) -> Option<&crate::domain::ProgramProfile> {
+        self.by_code.get(code)
+    }
+
+    pub fn all(&self) -> impl Iterator<Item = &crate::domain::ProgramProfile> {
+        self.by_code.values()
+    }
+
+    pub fn len(&self) -> usize {
+        self.by_code.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_code.is_empty()
+    }
+}
+
 /// Shared handler state. `R` and `C` are the adapter types the composition
 /// root selected.
 pub struct AppState<R, C> {
     pub simulate: Arc<SimulateStudent<R, C>>,
     pub runs: Arc<RunQueries<R>>,
     pub scan: Arc<ScanCatalog>,
+    pub profiles: Arc<ProfileBook>,
     pub default_student: Arc<StudentDto>,
     pub cpu_permits: Arc<Semaphore>,
     pub recent_runs: usize,
@@ -78,6 +111,7 @@ impl<R, C> Clone for AppState<R, C> {
             simulate: Arc::clone(&self.simulate),
             runs: Arc::clone(&self.runs),
             scan: Arc::clone(&self.scan),
+            profiles: Arc::clone(&self.profiles),
             default_student: Arc::clone(&self.default_student),
             cpu_permits: Arc::clone(&self.cpu_permits),
             recent_runs: self.recent_runs,
@@ -95,6 +129,8 @@ where
     Router::new()
         .route("/", get(home::<R, C>))
         .route("/simulate", post(simulate_form::<R, C>))
+        .route("/pick", get(pick_page::<R, C>))
+        .route("/profiles", get(profiles_page::<R, C>))
         .route("/runs/{id}", get(run_page::<R, C>))
         .route("/scan", get(scan_page::<R, C>))
         .route("/programs", get(programs_page::<R, C>))
@@ -194,6 +230,16 @@ async fn healthz() -> &'static str {
     "ok\n"
 }
 
+/// The `ranking` value of a query string, if any.
+fn ranking_param(raw: Option<&str>) -> Option<String> {
+    raw.and_then(|r| {
+        pairs(r.as_bytes())
+            .into_iter()
+            .find(|(k, _)| k == "ranking")
+            .map(|(_, v)| v)
+    })
+}
+
 /// Districts named by repeated `district` keys in a query string.
 fn district_filter(raw: Option<&str>) -> Vec<String> {
     raw.map(|r| {
@@ -216,14 +262,31 @@ where
     C: Clock + Send + Sync + 'static,
 {
     let recent = state.runs.recent(state.recent_runs).await?;
-    let template = HomePage::new(
-        views::FormValues::from_student(&state.default_student, &state.scan.districts()),
-        &state,
-        &district_filter(raw.as_deref()),
-        &recent,
-        None,
-    );
+    let mut form = views::FormValues::from_student(&state.default_student, &state.scan.districts());
+    if let Some(ranking) = ranking_param(raw.as_deref()) {
+        form.ranking = split_list(&ranking).collect::<Vec<_>>().join(", ");
+    }
+    let template = HomePage::new(form, &recent, None);
     page(&template)
+}
+
+async fn pick_page<R, C>(State(state): State<AppState<R, C>>) -> Result<Html<String>, HttpError>
+where
+    R: RunRepository + Send + Sync + 'static,
+    C: Clock + Send + Sync + 'static,
+{
+    page(&PickerPage::new(&state))
+}
+
+async fn profiles_page<R, C>(
+    State(state): State<AppState<R, C>>,
+    RawQuery(raw): RawQuery,
+) -> Result<Html<String>, HttpError>
+where
+    R: RunRepository + Send + Sync + 'static,
+    C: Clock + Send + Sync + 'static,
+{
+    page(&ProfilesPage::new(&state, &district_filter(raw.as_deref())))
 }
 
 /// The simulate form. Chips arrive as repeated `attribute` keys and one
@@ -379,8 +442,6 @@ where
     let recent = state.runs.recent(state.recent_runs).await?;
     let template = HomePage::new(
         views::FormValues::from_form(form, &state.scan.districts()),
-        state,
-        &[],
         &recent,
         Some(message),
     );
@@ -677,6 +738,15 @@ mod tests {
                 "zoned_K062Z"
             ]
         );
+    }
+
+    #[test]
+    fn ranking_param_is_read_from_the_query() {
+        assert_eq!(
+            ranking_param(Some("ranking=K442S%2CK443M&x=1")),
+            Some("K442S,K443M".to_owned())
+        );
+        assert_eq!(ranking_param(Some("x=1")), None);
     }
 
     #[test]

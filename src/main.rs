@@ -32,6 +32,13 @@ fn main() -> ExitCode {
         Command::FetchScores(args) => {
             with_runtime(|| composition::run_fetch_scores(&args)).map(|text| eprint!("{text}"))
         }
+        Command::FetchProfiles(args) => {
+            with_runtime(|| composition::run_fetch_profiles(&args)).map(|text| eprint!("{text}"))
+        }
+        Command::ReclassifyProfiles(args) => {
+            with_runtime(|| composition::run_reclassify_profiles(&args))
+                .map(|text| eprint!("{text}"))
+        }
         Command::Import(args) => {
             with_runtime(|| composition::run_import(&args)).map(|text| eprint!("{text}"))
         }

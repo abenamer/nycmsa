@@ -9,11 +9,16 @@ use sqlx::types::Json;
 use sqlx::Row;
 use time::OffsetDateTime;
 
+use serde::{Deserialize, Serialize};
+
 use crate::application::{
-    CatalogSnapshot, CatalogStore, ProgramStore, RepositoryError, Stored, StudentDefaultsStore,
-    TestResultsStore,
+    CatalogSnapshot, CatalogStore, ProfileStore, ProgramStore, RepositoryError, Stored,
+    StudentDefaultsStore, TestResultsStore,
 };
-use crate::domain::{ProgramDefinitions, SchoolScores, Student, TestResults};
+use crate::domain::{
+    Evidence, FocusScore, ProgramCode, ProgramDefinitions, ProgramFocus, ProgramProfile,
+    SchoolScores, Student, TestResults,
+};
 
 use super::dto::{
     program_definitions_from_dto, program_definitions_to_dto, student_from_dto, student_to_dto,
@@ -289,6 +294,152 @@ impl StudentDefaultsStore for PostgresReferenceData {
             recorded_at: SystemTime::from(at),
             source,
             value: student,
+        }))
+    }
+}
+
+/// Stored form of the evidence list.
+#[derive(Debug, Serialize, Deserialize)]
+struct EvidenceDto {
+    focus: String,
+    keyword: String,
+    label: String,
+    weight: f64,
+}
+
+/// Stored form of the kind scores.
+#[derive(Debug, Serialize, Deserialize)]
+struct ScoreDto {
+    focus: String,
+    confidence: f64,
+}
+
+fn focus_from_slug(slug: &str) -> Option<ProgramFocus> {
+    ProgramFocus::ALL.into_iter().find(|f| f.slug() == slug)
+}
+
+#[async_trait::async_trait]
+impl ProfileStore for PostgresReferenceData {
+    async fn save_profiles(
+        &self,
+        profiles: &[ProgramProfile],
+        source: &str,
+        recorded_at: SystemTime,
+    ) -> Result<(), RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(unavailable)?;
+        let id: i64 = sqlx::query(
+            "INSERT INTO profile_snapshots (recorded_at, source) VALUES ($1, $2) RETURNING id",
+        )
+        .bind(OffsetDateTime::from(recorded_at))
+        .bind(source)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(unavailable)?
+        .try_get("id")
+        .map_err(unavailable)?;
+        for p in profiles {
+            let scores: Vec<ScoreDto> = p
+                .scores
+                .iter()
+                .map(|s| ScoreDto {
+                    focus: s.focus.slug().to_owned(),
+                    confidence: s.confidence,
+                })
+                .collect();
+            let evidence: Vec<EvidenceDto> = p
+                .evidence
+                .iter()
+                .map(|e| EvidenceDto {
+                    focus: e.focus.slug().to_owned(),
+                    keyword: e.keyword.clone(),
+                    label: e.label.clone(),
+                    weight: e.weight,
+                })
+                .collect();
+            sqlx::query(
+                "INSERT INTO program_profiles (snapshot_id, code, dbn, program_name, school_name, method, description, overview, academic_opportunities, art_courses, language_classes, scores, evidence) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+            )
+            .bind(id)
+            .bind(p.code.as_str())
+            .bind(&p.dbn)
+            .bind(&p.program_name)
+            .bind(&p.school_name)
+            .bind(&p.method)
+            .bind(&p.description)
+            .bind(&p.overview)
+            .bind(&p.academic_opportunities)
+            .bind(&p.art_courses)
+            .bind(&p.language_classes)
+            .bind(Json(scores))
+            .bind(Json(evidence))
+            .execute(&mut *tx)
+            .await
+            .map_err(unavailable)?;
+        }
+        tx.commit().await.map_err(unavailable)
+    }
+
+    async fn latest_profiles(
+        &self,
+    ) -> Result<Option<Stored<Vec<ProgramProfile>>>, RepositoryError> {
+        let Some((id, recorded_at, source)) =
+            latest_header(&self.pool, "profile_snapshots").await?
+        else {
+            return Ok(None);
+        };
+        let rows = sqlx::query(
+            "SELECT code, dbn, program_name, school_name, method, description, overview, academic_opportunities, art_courses, language_classes, scores, evidence FROM program_profiles WHERE snapshot_id = $1 ORDER BY code",
+        )
+        .bind(id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(unavailable)?;
+        let mut profiles = Vec::with_capacity(rows.len());
+        for r in rows {
+            let code: String = r.try_get("code").map_err(unavailable)?;
+            let Json(scores): Json<Vec<ScoreDto>> = r.try_get("scores").map_err(unavailable)?;
+            let Json(evidence): Json<Vec<EvidenceDto>> =
+                r.try_get("evidence").map_err(unavailable)?;
+            let decode = |slug: &str| {
+                focus_from_slug(slug).ok_or_else(|| corrupt(id, format!("unknown focus {slug:?}")))
+            };
+            profiles.push(ProgramProfile {
+                code: ProgramCode::parse(&code).map_err(|e| corrupt(id, e))?,
+                dbn: r.try_get("dbn").map_err(unavailable)?,
+                program_name: r.try_get("program_name").map_err(unavailable)?,
+                school_name: r.try_get("school_name").map_err(unavailable)?,
+                method: r.try_get("method").map_err(unavailable)?,
+                description: r.try_get("description").map_err(unavailable)?,
+                overview: r.try_get("overview").map_err(unavailable)?,
+                academic_opportunities: r.try_get("academic_opportunities").map_err(unavailable)?,
+                art_courses: r.try_get("art_courses").map_err(unavailable)?,
+                language_classes: r.try_get("language_classes").map_err(unavailable)?,
+                scores: scores
+                    .into_iter()
+                    .map(|s| {
+                        Ok(FocusScore {
+                            focus: decode(&s.focus)?,
+                            confidence: s.confidence,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, RepositoryError>>()?,
+                evidence: evidence
+                    .into_iter()
+                    .map(|e| {
+                        Ok(Evidence {
+                            focus: decode(&e.focus)?,
+                            keyword: e.keyword,
+                            label: e.label,
+                            weight: e.weight,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, RepositoryError>>()?,
+            });
+        }
+        Ok(Some(Stored {
+            recorded_at,
+            source,
+            value: profiles,
         }))
     }
 }

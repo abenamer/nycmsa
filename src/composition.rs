@@ -12,12 +12,12 @@ use tokio::sync::Semaphore;
 
 use crate::adapters::cli::render::{render_report, render_scan};
 use crate::adapters::cli::{
-    scan_request, simulation_request, BootstrapArgs, DatabaseArgs, FetchArgs, FetchScoresArgs,
-    ImportArgs, ScanArgs, ScoreSource, ServeArgs, SimArgs,
+    scan_request, simulation_request, BootstrapArgs, DatabaseArgs, FetchArgs, FetchProfilesArgs,
+    FetchScoresArgs, ImportArgs, ScanArgs, ScoreSource, ServeArgs, SimArgs,
 };
 use crate::adapters::csv_export::scan_rows_csv;
 use crate::adapters::dto::{student_from_dto, student_to_dto, InvalidInput, StudentDto};
-use crate::adapters::http::{router, AppState, HttpLimits};
+use crate::adapters::http::{router, AppState, HttpLimits, ProfileBook};
 use crate::adapters::json_files::{load_program_definitions, load_student, FileLoadError};
 use crate::adapters::myschools::{catalog_from_documents, load_catalog, CatalogLoadError};
 use crate::adapters::myschools_api::{ClientBuildError, DEFAULT_BASE_URL};
@@ -29,13 +29,14 @@ use crate::adapters::{
     PostgresReferenceData, PostgresRunRepository, SystemClock,
 };
 use crate::application::{
-    Clock, DistrictFilter, DownloadError, ImportSeeds, LoadReferenceData, ReferenceError,
-    RefreshCatalog, RefreshTestResults, RunQueries, RunRepository, ScanCatalog, SimulateStudent,
+    Clock, DistrictFilter, DownloadError, ImportSeeds, LoadReferenceData, ReclassifyProfiles,
+    ReferenceError, RefreshCatalog, RefreshProfiles, RefreshTestResults, RunQueries, RunRepository,
+    ScanCatalog, SimulateStudent,
 };
 use crate::domain::catalog::InvalidDistrictCode;
 use crate::domain::{
-    programs_from_catalog, CatalogProgram, DistrictCode, ProgramDefinitions, SimulationError,
-    TestResults,
+    programs_from_catalog, CatalogProgram, DistrictCode, ProgramDefinitions, ProgramProfile,
+    SimulationError, TestResults,
 };
 
 /// Every failure the binary can report. Each variant keeps its source.
@@ -186,6 +187,37 @@ async fn fetch_scores(
     ))
 }
 
+async fn fetch_profiles(reference: PostgresReferenceData) -> Result<String, AppError> {
+    let client = MySchoolsApiClient::new(DEFAULT_BASE_URL.to_owned(), Duration::from_millis(250))?;
+    let count = RefreshProfiles::new(client, reference, SystemClock)
+        .execute(
+            &format!("MySchools API {DEFAULT_BASE_URL}<school id>/"),
+            |done, total| {
+                if done % 50 == 0 || done == total {
+                    tracing::info!(done, total, "looked up schools");
+                }
+            },
+        )
+        .await?;
+    Ok(format!("stored profiles for {count} programs\n"))
+}
+
+/// `nycmsa reclassify-profiles`: apply the current rules to the stored
+/// texts.
+pub async fn run_reclassify_profiles(args: &FetchProfilesArgs) -> Result<String, AppError> {
+    let (_, reference) = connect(&args.database).await?;
+    let count = ReclassifyProfiles::new(reference, SystemClock)
+        .execute()
+        .await?;
+    Ok(format!("reclassified {count} program profiles\n"))
+}
+
+/// `nycmsa fetch-profiles`: look up and classify every program.
+pub async fn run_fetch_profiles(args: &FetchProfilesArgs) -> Result<String, AppError> {
+    let (_, reference) = connect(&args.database).await?;
+    fetch_profiles(reference).await
+}
+
 async fn import_seeds(
     reference: PostgresReferenceData,
     programs: &Path,
@@ -240,7 +272,10 @@ pub async fn run_bootstrap(args: &BootstrapArgs) -> Result<String, AppError> {
         report.push_str(&fetch_catalog(reference.clone(), &args.districts).await?);
     }
     if !inventory.results {
-        report.push_str(&fetch_scores(reference, args.source).await?);
+        report.push_str(&fetch_scores(reference.clone(), args.source).await?);
+    }
+    if !inventory.profiles {
+        report.push_str(&fetch_profiles(reference).await?);
     }
     if report.is_empty() {
         report.push_str("the database already holds every reference set\n");
@@ -278,6 +313,7 @@ pub async fn run_serve(args: &ServeArgs) -> Result<(), AppError> {
         student_to_dto(&data.student.value),
         catalog,
         data.results.value,
+        data.profiles.value,
     )
     .await
 }
@@ -291,6 +327,7 @@ async fn serve_with<R>(
     student: StudentDto,
     catalog: Vec<CatalogProgram>,
     results: TestResults,
+    profiles: Vec<ProgramProfile>,
 ) -> Result<(), AppError>
 where
     R: RunRepository + Clone + Send + Sync + 'static,
@@ -303,6 +340,7 @@ where
         student,
         catalog,
         results,
+        profiles,
         &limits,
     );
     let app = router(state, &limits);
@@ -320,6 +358,7 @@ where
 }
 
 /// Builds the handler state. Shared with the HTTP tests.
+#[allow(clippy::too_many_arguments)]
 pub fn build_state<R, C>(
     repository: R,
     clock: C,
@@ -327,6 +366,7 @@ pub fn build_state<R, C>(
     student: StudentDto,
     catalog: Vec<CatalogProgram>,
     results: TestResults,
+    profiles: Vec<ProgramProfile>,
     limits: &HttpLimits,
 ) -> AppState<R, C>
 where
@@ -337,6 +377,7 @@ where
         simulate: Arc::new(SimulateStudent::new(programs, repository.clone(), clock)),
         runs: Arc::new(RunQueries::new(repository)),
         scan: Arc::new(ScanCatalog::new(catalog, results)),
+        profiles: Arc::new(ProfileBook::new(profiles)),
         default_student: Arc::new(student),
         cpu_permits: Arc::new(Semaphore::new(limits.cpu_permits.max(1))),
         recent_runs: limits.recent_runs,
@@ -359,6 +400,7 @@ pub struct BundledData {
     pub student: StudentDto,
     pub catalog: Vec<CatalogProgram>,
     pub results: TestResults,
+    pub profiles: Vec<ProgramProfile>,
 }
 
 /// Loads the seed files and a catalog file for tests and local tools, with
@@ -372,5 +414,6 @@ pub fn load_bundled(seed_dir: &Path, catalog_file: &Path) -> Result<BundledData,
         student: load_student(&seed_dir.join("student.json"))?,
         catalog,
         results: TestResults::new(),
+        profiles: Vec::new(),
     })
 }
