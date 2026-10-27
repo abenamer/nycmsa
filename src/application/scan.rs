@@ -26,6 +26,16 @@ impl ScanCatalog {
         self.results.len()
     }
 
+    /// The latest test year among the loaded results.
+    pub fn scores_year(&self) -> Option<u32> {
+        self.results.values().map(|s| s.year).max()
+    }
+
+    /// The latest scores for a school, by DBN.
+    pub fn scores_for(&self, dbn: &str) -> Option<crate::domain::SchoolScores> {
+        self.results.get(dbn).copied()
+    }
+
     /// Number of programs in the loaded catalog.
     pub fn program_count(&self) -> usize {
         self.catalog.len()

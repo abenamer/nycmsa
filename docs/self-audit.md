@@ -87,10 +87,46 @@ The cross-check is a one-time local result for the workbooks published on
 2026-08-03. Repeat it after each refresh; the reader detects a missing
 sheet or column but not a renamed value column.
 
+## Local evidence: 2026-10-27 (program picker and profiles)
+
+Same environment.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt`, `clippy -D warnings`, `cargo test` | Passed: 104 unit tests, 14 HTTP tests; 2 ignored |
+| `cargo test --test postgres_reference --test postgres_runs -- --ignored` | Passed, including the profile snapshot round trip |
+| `nycmsa fetch-profiles` against MySchools | Passed in 4 m 28 s: 477 school lookups, 784 program profiles stored; 782 have a school overview, 36 a program description |
+| `nycmsa reclassify-profiles` | Passed: new snapshot in seconds |
+| Tag distribution after reclassification | Zoned 236, Arts 216, STEM 112, Humanities 62, Dual language 59, Honors 39, Careers 6; 234 programs General only. The first rule set, which matched substrings and treated the overview like program text, had tagged 615 programs Arts and 553 Humanities; see the domain model for the fix. |
+| Pages | Passed: `/pick` and `/profiles` render from the database; the picker's ranking reaches the questions page through `?ranking=` |
+| Picker and form memory in the browser | Not run: no browser automation in this check. The JavaScript is small and hand-reviewed; a browser test is a gap. |
+
+## Local evidence: 2026-10-27 (code review fixes on pull request 1)
+
+Same environment. The ten findings from the inline code review on the
+first pull request were applied in one change; see the pull request
+thread for the list.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt`, `clippy -D warnings`, `cargo test` | Passed: 106 unit tests, 14 HTTP tests; 2 ignored |
+| GitHub Actions `rust` job on the first push (c17bf97) | Failed: `the_bundled_results_file_loads` read `data/school_test_results.csv`, which this change removed from git. The test had passed locally only because the untracked file was still on disk. The test was removed (the CSV round-trip test covers the reader) and the suite was re-run locally with the file moved away. |
+| GitHub Actions `rust` job on the second push (341e1f7) | Failed at `cargo audit`: five advisories against `quick-xml` 0.38 (RUSTSEC-2026-0194, -0195) and `zip` 4.6 (RUSTSEC-2026-0367, -0368, -0369), both reached only through `calamine` 0.31. Fixed by moving to `calamine` 0.37, which depends on `quick-xml` 0.42 and `zip` 9.1; no source change was needed. `cargo audit` is clean locally apart from the allowed `basic-toml` unmaintained warning. |
+| Reader cross-check after the `calamine` upgrade | Passed: `nycmsa fetch-scores --source infohub` re-read the live workbooks in 16 s; 1,129 schools and 0 differing fields against the snapshot the previous `calamine` had produced. The three fixture-workbook tests also pass. |
+| `cargo test --test postgres_reference --test postgres_runs -- --ignored` | Passed |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed: 36 doc tests |
+| `nycmsa reclassify-profiles` on the stored 784 profiles | Passed. The snapshot source carries one `(reclassified)` suffix after two runs. Tags at or above the 0.5 threshold: Zoned 236, Arts 216, STEM 112, Dual language 59, Humanities 59 (was 62 before "language arts" and "social studies" stopped counting), Honors 39, Careers 6; 237 programs General only. |
+| Refresh with a failing school | Covered by two unit tests on `RefreshProfiles`: one failed lookup is skipped, counted, and named in the snapshot source; when every lookup fails nothing is saved. The live path was not re-run. |
+
 ## Remote evidence
 
-None yet. After the first push, record here the GitHub Actions run that
-passed for the pushed commit, with its commit hash and the jobs it ran.
+| Revision | Run | Outcome |
+| --- | --- | --- |
+| adf9f22 (pull request 1, 2026-10-27) | GitHub Actions run 40453826962 (pull request) and 40453821113 (push) | Passed: `docs`, `rust` (fmt, check, clippy, tests, both PostgreSQL integration tests against the `postgres:17` service, `cargo audit`), `docker` (image build and `sim --trials 1000`) |
+
+The two earlier pushes on the same pull request failed in `rust`; the
+local-evidence table above records why and the fix for each. A commit
+that changes only this file is not recorded here.
 
 ## Limits
 

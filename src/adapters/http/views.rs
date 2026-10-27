@@ -10,8 +10,8 @@ use crate::adapters::dto::StudentDto;
 use crate::application::Run;
 use crate::application::{Clock, RunRepository};
 use crate::domain::{
-    Borough, DistrictCode, ProgramDefinitions, ProgramRow, Reach, ScanRequest, ScanRow,
-    SelectionKind, WaitlistNumbers,
+    Borough, DistrictCode, ProgramDefinitions, ProgramFocus, ProgramRow, Reach, ScanRequest,
+    ScanRow, SelectionKind, WaitlistNumbers, TAG_THRESHOLD,
 };
 
 use super::choices::{attribute_label, OutlookChoice, TalentTestChoice, WaitlistChoice};
@@ -227,13 +227,6 @@ fn default_districts(student: &StudentDto) -> Vec<String> {
     districts
 }
 
-pub struct ProgramOption {
-    pub code: String,
-    pub district: String,
-    pub name: String,
-    pub how: &'static str,
-}
-
 /// How a program picks students, in plain words.
 fn how_it_admits(kind: SelectionKind) -> &'static str {
     match kind {
@@ -254,52 +247,14 @@ pub struct RecentRun {
 #[template(path = "home.html")]
 pub struct HomePage {
     pub form: FormValues,
-    pub district_links: Vec<FilterLink>,
-    pub programs: Vec<ProgramOption>,
-    pub shown_districts: String,
     pub recent: Vec<RecentRun>,
     pub error: Option<String>,
 }
 
 impl HomePage {
-    pub fn new<R, C>(
-        form: FormValues,
-        state: &AppState<R, C>,
-        requested_districts: &[String],
-        recent: &[Run],
-        error: Option<String>,
-    ) -> Self
-    where
-        R: RunRepository,
-        C: Clock,
-    {
-        let districts = state.scan.districts();
-        let selected = if requested_districts.is_empty() {
-            default_districts(&state.default_student)
-        } else {
-            requested_districts.to_vec()
-        };
-        let definitions = state.simulate.default_programs();
-        let programs = state
-            .scan
-            .programs()
-            .iter()
-            .filter(|p| selected.contains(&p.district.as_str().to_owned()))
-            .filter_map(|p| {
-                let program = definitions.get(&p.code)?;
-                Some(ProgramOption {
-                    code: p.code.to_string(),
-                    district: p.district.to_string(),
-                    name: program.name().to_owned(),
-                    how: how_it_admits(program.selection()),
-                })
-            })
-            .collect();
+    pub fn new(form: FormValues, recent: &[Run], error: Option<String>) -> Self {
         Self {
             form,
-            district_links: district_links("/", &districts, &selected),
-            programs,
-            shown_districts: selected.join(", "),
             recent: recent
                 .iter()
                 .map(|run| RecentRun {
@@ -322,6 +277,198 @@ impl HomePage {
                 })
                 .collect(),
             error,
+        }
+    }
+}
+
+/// One row of the program picker.
+pub struct PickRow {
+    pub code: String,
+    pub district: String,
+    pub borough: &'static str,
+    pub school: String,
+    pub program: String,
+    pub picks_by: &'static str,
+    pub screened: bool,
+    /// Space-separated focus slugs for filtering.
+    pub focus_slugs: String,
+    pub focus_labels: String,
+    pub seats: String,
+    pub applicants: String,
+    pub ela: String,
+    pub math: String,
+}
+
+#[derive(Template)]
+#[template(path = "pick.html")]
+pub struct PickerPage {
+    pub district_chips: Vec<DistrictChip>,
+    pub focus_chips: Vec<Chip>,
+    pub rows: Vec<PickRow>,
+    pub scores_year: Option<u32>,
+    pub profiled: usize,
+}
+
+impl PickerPage {
+    pub fn new<R, C>(state: &AppState<R, C>) -> Self
+    where
+        R: RunRepository,
+        C: Clock,
+    {
+        let definitions = state.simulate.default_programs();
+        let scores_year = state.scan.scores_year();
+        let rows = state
+            .scan
+            .programs()
+            .iter()
+            .filter_map(|p| {
+                let program = definitions.get(&p.code)?;
+                let scores = state.scan.scores_for(&p.dbn);
+                let focus = state.profiles.tags(p.code.as_str());
+                Some(PickRow {
+                    code: p.code.to_string(),
+                    district: p.district.to_string(),
+                    borough: p.district.borough().map_or("Other", Borough::name),
+                    school: p.school_name.clone(),
+                    program: p.program_name.clone(),
+                    picks_by: how_it_admits(program.selection()),
+                    screened: program.selection() == SelectionKind::Screened,
+                    focus_slugs: focus.iter().map(|f| f.slug()).collect::<Vec<_>>().join(" "),
+                    focus_labels: focus
+                        .iter()
+                        .map(|f| f.label())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    seats: opt(p.seats),
+                    applicants: opt(p.applicants),
+                    ela: score(scores.and_then(|s| s.ela_proficient_pct)).0,
+                    math: score(scores.and_then(|s| s.math_proficient_pct)).0,
+                })
+            })
+            .collect();
+        Self {
+            district_chips: district_chips(&state.scan.districts(), &[]),
+            focus_chips: ProgramFocus::ALL
+                .iter()
+                .map(|f| Chip {
+                    value: f.slug().to_owned(),
+                    label: f.label().to_owned(),
+                    checked: false,
+                })
+                .collect(),
+            rows,
+            scores_year,
+            profiled: state.profiles.len(),
+        }
+    }
+}
+
+/// One program on the profiles page.
+pub struct ProfileView {
+    pub code: String,
+    pub district: String,
+    pub school: String,
+    pub program: String,
+    pub method: String,
+    pub focus: String,
+    pub description: String,
+    pub overview: String,
+    pub academic_opportunities: String,
+    pub art_courses: String,
+    pub language_classes: String,
+    /// `STEM (66%)`, the kinds at or above the threshold.
+    pub tags: Vec<String>,
+    /// `Arts (28%)`, the kinds below it.
+    pub weaker: Vec<String>,
+    /// `STEM: "scien" in program name (+60%)`, one per match.
+    pub evidence: Vec<String>,
+}
+
+#[derive(Template)]
+#[template(path = "profiles.html")]
+pub struct ProfilesPage {
+    pub district_links: Vec<FilterLink>,
+    pub shown_districts: String,
+    pub profiles: Vec<ProfileView>,
+    pub total: usize,
+}
+
+impl ProfilesPage {
+    pub fn new<R, C>(state: &AppState<R, C>, requested_districts: &[String]) -> Self
+    where
+        R: RunRepository,
+        C: Clock,
+    {
+        let districts = state.scan.districts();
+        let selected = if requested_districts.is_empty() {
+            default_districts(&state.default_student)
+        } else {
+            requested_districts.to_vec()
+        };
+        let district_of: std::collections::BTreeMap<&str, String> = state
+            .scan
+            .programs()
+            .iter()
+            .map(|p| (p.code.as_str(), p.district.to_string()))
+            .collect();
+        let profiles = state
+            .profiles
+            .all()
+            .filter_map(|p| {
+                let district = district_of.get(p.code.as_str())?;
+                if !selected.contains(district) {
+                    return None;
+                }
+                Some(ProfileView {
+                    code: p.code.to_string(),
+                    district: district.clone(),
+                    school: p.school_name.clone(),
+                    program: p.program_name.clone(),
+                    method: p.method.clone(),
+                    focus: p
+                        .tags()
+                        .iter()
+                        .map(|f| f.label())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    description: p.description.clone(),
+                    overview: p.overview.clone(),
+                    academic_opportunities: p.academic_opportunities.clone(),
+                    art_courses: p.art_courses.clone(),
+                    language_classes: p.language_classes.clone(),
+                    tags: p
+                        .scores
+                        .iter()
+                        .filter(|s| s.confidence >= TAG_THRESHOLD)
+                        .map(|s| format!("{} ({})", s.focus.label(), pct0(s.confidence)))
+                        .collect(),
+                    weaker: p
+                        .scores
+                        .iter()
+                        .filter(|s| s.confidence < TAG_THRESHOLD)
+                        .map(|s| format!("{} ({})", s.focus.label(), pct0(s.confidence)))
+                        .collect(),
+                    evidence: p
+                        .evidence
+                        .iter()
+                        .map(|e| {
+                            format!(
+                                "{}: \"{}\" in {} (+{})",
+                                e.focus.label(),
+                                e.keyword,
+                                e.label,
+                                pct0(e.weight)
+                            )
+                        })
+                        .collect(),
+                })
+            })
+            .collect();
+        Self {
+            district_links: district_links("/profiles", &districts, &selected),
+            shown_districts: selected.join(", "),
+            profiles,
+            total: state.profiles.len(),
         }
     }
 }
@@ -623,6 +770,7 @@ impl ScanPage {
         districts: &[DistrictCode],
         catalog_size: usize,
         schools_with_scores: usize,
+        scores_year: Option<u32>,
         error: Option<String>,
     ) -> Self {
         let definitions = ProgramDefinitions::default();
@@ -632,12 +780,10 @@ impl ScanPage {
             .flat_map(|a| a.split(',').map(|s| s.trim().to_owned()))
             .collect();
         let district_chips = district_chips(districts, &selected);
-        let scores_year =
-            result.and_then(|(_, rows)| rows.iter().find_map(|r| r.scores.map(|s| s.year)));
         let scores_line = match (schools_with_scores, scores_year) {
             (0, _) => "No state test results are loaded; run `nycmsa fetch-scores`.".to_owned(),
             (_, Some(year)) => format!(
-                "ELA and Math show the share of the school's students at proficiency (levels 3 and 4) on the {year} New York State tests, from NYC Open Data. Blank means the DOE suppressed the figure or did not report it."
+                "ELA and Math show the share of the school's students at proficiency (levels 3 and 4) on the {year} New York State tests, as published by the NYC DOE. Blank means the DOE suppressed the figure or did not report it."
             ),
             (_, None) => "State test results are loaded but none of these schools has a figure.".to_owned(),
         };

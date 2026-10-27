@@ -17,9 +17,10 @@ asked for all of them to live in PostgreSQL next to the simulation runs.
 
 ## Decision
 
-- Four store ports: `CatalogStore`, `TestResultsStore`, `ProgramStore`,
-  `StudentDefaultsStore`. `PostgresReferenceData` implements all four on
-  the pool the run repository opens.
+- Five store ports: `CatalogStore`, `TestResultsStore`, `ProgramStore`,
+  `StudentDefaultsStore`, and `ProfileStore` (added with the program
+  profiles). `PostgresReferenceData` implements them all on the pool the
+  run repository opens.
 - Every save adds a snapshot row (`catalog_snapshots`, `score_snapshots`,
   `program_sets`, `student_defaults`) and its detail rows. The server
   reads the newest snapshot of each set at startup. Older snapshots stay,

@@ -37,7 +37,7 @@ use super::dto::{
     DEFAULT_TRIALS,
 };
 use choices::{OutlookChoice, TalentTestChoice, WaitlistChoice};
-use views::{HomePage, ProgramsPage, RunPage, ScanPage};
+use views::{HomePage, PickerPage, ProfilesPage, ProgramsPage, RunPage, ScanPage};
 
 /// Request limits (REAS-SEC-001).
 #[derive(Debug, Clone, Copy)]
@@ -61,12 +61,68 @@ impl Default for HttpLimits {
     }
 }
 
+/// The stored program profiles by code, with the kind tags of every
+/// catalog program computed once: from the profile when there is one,
+/// else from the names and method.
+pub struct ProfileBook {
+    by_code: std::collections::BTreeMap<String, crate::domain::ProgramProfile>,
+    tags: std::collections::BTreeMap<String, Vec<crate::domain::ProgramFocus>>,
+}
+
+impl ProfileBook {
+    pub fn new(
+        profiles: Vec<crate::domain::ProgramProfile>,
+        catalog: &[crate::domain::CatalogProgram],
+    ) -> Self {
+        let by_code: std::collections::BTreeMap<String, crate::domain::ProgramProfile> = profiles
+            .into_iter()
+            .map(|p| (p.code.as_str().to_owned(), p))
+            .collect();
+        let tags = catalog
+            .iter()
+            .map(|p| {
+                let code = p.code.as_str().to_owned();
+                let tags = match by_code.get(&code) {
+                    Some(profile) => profile.tags(),
+                    None => {
+                        crate::domain::classify_focus(&p.program_name, &p.school_name, &p.method)
+                    }
+                };
+                (code, tags)
+            })
+            .collect();
+        Self { by_code, tags }
+    }
+
+    pub fn get(&self, code: &str) -> Option<&crate::domain::ProgramProfile> {
+        self.by_code.get(code)
+    }
+
+    /// The kind tags of a catalog program.
+    pub fn tags(&self, code: &str) -> &[crate::domain::ProgramFocus] {
+        self.tags.get(code).map_or(&[], Vec::as_slice)
+    }
+
+    pub fn all(&self) -> impl Iterator<Item = &crate::domain::ProgramProfile> {
+        self.by_code.values()
+    }
+
+    pub fn len(&self) -> usize {
+        self.by_code.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_code.is_empty()
+    }
+}
+
 /// Shared handler state. `R` and `C` are the adapter types the composition
 /// root selected.
 pub struct AppState<R, C> {
     pub simulate: Arc<SimulateStudent<R, C>>,
     pub runs: Arc<RunQueries<R>>,
     pub scan: Arc<ScanCatalog>,
+    pub profiles: Arc<ProfileBook>,
     pub default_student: Arc<StudentDto>,
     pub cpu_permits: Arc<Semaphore>,
     pub recent_runs: usize,
@@ -78,6 +134,7 @@ impl<R, C> Clone for AppState<R, C> {
             simulate: Arc::clone(&self.simulate),
             runs: Arc::clone(&self.runs),
             scan: Arc::clone(&self.scan),
+            profiles: Arc::clone(&self.profiles),
             default_student: Arc::clone(&self.default_student),
             cpu_permits: Arc::clone(&self.cpu_permits),
             recent_runs: self.recent_runs,
@@ -95,6 +152,8 @@ where
     Router::new()
         .route("/", get(home::<R, C>))
         .route("/simulate", post(simulate_form::<R, C>))
+        .route("/pick", get(pick_page::<R, C>))
+        .route("/profiles", get(profiles_page::<R, C>))
         .route("/runs/{id}", get(run_page::<R, C>))
         .route("/scan", get(scan_page::<R, C>))
         .route("/programs", get(programs_page::<R, C>))
@@ -194,6 +253,16 @@ async fn healthz() -> &'static str {
     "ok\n"
 }
 
+/// The `ranking` value of a query string, if any.
+fn ranking_param(raw: Option<&str>) -> Option<String> {
+    raw.and_then(|r| {
+        pairs(r.as_bytes())
+            .into_iter()
+            .find(|(k, _)| k == "ranking")
+            .map(|(_, v)| v)
+    })
+}
+
 /// Districts named by repeated `district` keys in a query string.
 fn district_filter(raw: Option<&str>) -> Vec<String> {
     raw.map(|r| {
@@ -216,14 +285,31 @@ where
     C: Clock + Send + Sync + 'static,
 {
     let recent = state.runs.recent(state.recent_runs).await?;
-    let template = HomePage::new(
-        views::FormValues::from_student(&state.default_student, &state.scan.districts()),
-        &state,
-        &district_filter(raw.as_deref()),
-        &recent,
-        None,
-    );
+    let mut form = views::FormValues::from_student(&state.default_student, &state.scan.districts());
+    if let Some(ranking) = ranking_param(raw.as_deref()) {
+        form.ranking = split_list(&ranking).collect::<Vec<_>>().join(", ");
+    }
+    let template = HomePage::new(form, &recent, None);
     page(&template)
+}
+
+async fn pick_page<R, C>(State(state): State<AppState<R, C>>) -> Result<Html<String>, HttpError>
+where
+    R: RunRepository + Send + Sync + 'static,
+    C: Clock + Send + Sync + 'static,
+{
+    page(&PickerPage::new(&state))
+}
+
+async fn profiles_page<R, C>(
+    State(state): State<AppState<R, C>>,
+    RawQuery(raw): RawQuery,
+) -> Result<Html<String>, HttpError>
+where
+    R: RunRepository + Send + Sync + 'static,
+    C: Clock + Send + Sync + 'static,
+{
+    page(&ProfilesPage::new(&state, &district_filter(raw.as_deref())))
 }
 
 /// The simulate form. Chips arrive as repeated `attribute` keys and one
@@ -379,8 +465,6 @@ where
     let recent = state.runs.recent(state.recent_runs).await?;
     let template = HomePage::new(
         views::FormValues::from_form(form, &state.scan.districts()),
-        state,
-        &[],
         &recent,
         Some(message),
     );
@@ -534,6 +618,7 @@ where
                 &districts,
                 state.scan.program_count(),
                 state.scan.schools_with_scores(),
+                state.scan.scores_year(),
                 None,
             );
             Ok(page(&template)?.into_response())
@@ -545,6 +630,7 @@ where
                 &districts,
                 state.scan.program_count(),
                 state.scan.schools_with_scores(),
+                state.scan.scores_year(),
                 Some(error.to_string()),
             );
             Ok((StatusCode::UNPROCESSABLE_ENTITY, page(&template)?).into_response())
@@ -677,6 +763,15 @@ mod tests {
                 "zoned_K062Z"
             ]
         );
+    }
+
+    #[test]
+    fn ranking_param_is_read_from_the_query() {
+        assert_eq!(
+            ranking_param(Some("ranking=K442S%2CK443M&x=1")),
+            Some("K442S,K443M".to_owned())
+        );
+        assert_eq!(ranking_param(Some("x=1")), None);
     }
 
     #[test]

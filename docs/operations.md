@@ -25,9 +25,9 @@ results, the hand-entered programs, and the form defaults.
 2. Build: `cargo build --release --locked`.
 3. Fill the database: `./target/release/nycmsa bootstrap`. It applies the
    migrations, stores `data/programs.json` and `data/student.json`,
-   downloads the MySchools catalog for all districts, and downloads the
-   state test results from NYC Open Data. It skips any set the database
-   already holds.
+   downloads the MySchools catalog for all districts, downloads the
+   state test results, and looks up every school's MySchools page for the
+   program profiles. It skips any set the database already holds.
 4. Start: `./target/release/nycmsa serve`.
 5. Open `http://127.0.0.1:8080`.
 
@@ -145,6 +145,28 @@ After a refresh, do the cross-check in the [self-audit](self-audit.md):
 read the same workbooks with a second tool and compare the stored
 values. The reader fails on a missing sheet or column, but a reordered
 or renamed value column would need this check to catch it.
+
+## Refresh the program profiles
+
+1. Run `nycmsa fetch-profiles` (with Compose: `docker compose run --rm init fetch-profiles`).
+2. Restart the server.
+
+Expected result: the command looks up every school in the latest catalog
+snapshot on MySchools (one request per school, a quarter second apart,
+about three minutes for the city), prints the number of program profiles
+stored, and the picker's "kind of program" filter and the "about each
+program" page use the new snapshot. `bootstrap` runs this step when the
+database has no profiles.
+
+## Re-run the kind-of-program rules
+
+When the keyword rules in `domain::catalog` change:
+
+1. Run `nycmsa reclassify-profiles`.
+2. Restart the server.
+
+Expected result: a new profile snapshot with the same texts and new tags,
+in a few seconds and without a download.
 
 ## Update the hand-entered programs or the form defaults
 

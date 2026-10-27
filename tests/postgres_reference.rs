@@ -10,11 +10,13 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use nycmsa::adapters::{PostgresReferenceData, PostgresRunRepository};
 use nycmsa::application::{
-    CatalogSnapshot, CatalogStore, ProgramStore, StudentDefaultsStore, TestResultsStore,
+    CatalogSnapshot, CatalogStore, ProfileStore, ProgramStore, StudentDefaultsStore,
+    TestResultsStore,
 };
 use nycmsa::domain::{
-    Attribute, GroupDemand, PriorityGroup, Program, ProgramCode, ProgramDefinitions, Ranking,
-    SchoolScores, SelectionKind, StandardDeviation, Student, TestResults,
+    Attribute, Evidence, GroupDemand, PriorityGroup, Program, ProgramCode, ProgramDefinitions,
+    ProgramFocus, ProgramProfile, Ranking, SchoolScores, SelectionKind, StandardDeviation, Student,
+    TestResults,
 };
 
 #[tokio::test]
@@ -130,11 +132,46 @@ async fn reference_snapshots_round_trip_and_the_latest_wins() {
         .attributes
         .contains(&Attribute::parse("borough_brooklyn").expect("valid")));
 
+    // Program profiles.
+    let profiles = vec![ProgramProfile {
+        code: ProgramCode::parse("K187A").expect("valid"),
+        dbn: "20K187".to_owned(),
+        program_name: "Academy for Scientific Research".to_owned(),
+        school_name: "The Christa Mcauliffe School".to_owned(),
+        method: "Screened".to_owned(),
+        description: String::new(),
+        overview: "A place of wonder.".to_owned(),
+        academic_opportunities: String::new(),
+        art_courses: "Chorus/Singing".to_owned(),
+        language_classes: String::new(),
+        scores: vec![nycmsa::domain::FocusScore {
+            focus: ProgramFocus::Stem,
+            confidence: 0.6,
+        }],
+        evidence: vec![Evidence {
+            focus: ProgramFocus::Stem,
+            keyword: "scien".to_owned(),
+            label: "program name".to_owned(),
+            weight: 0.6,
+        }],
+    }];
+    store
+        .save_profiles(&profiles, &tag, at)
+        .await
+        .expect("saves");
+    let latest = store
+        .latest_profiles()
+        .await
+        .expect("reads")
+        .expect("present");
+    assert_eq!(latest.value, profiles);
+
     for table in [
         "catalog_snapshots",
         "score_snapshots",
         "program_sets",
         "student_defaults",
+        "profile_snapshots",
     ] {
         sqlx::query(&format!("DELETE FROM {table} WHERE source LIKE $1"))
             .bind(format!("{tag}%"))

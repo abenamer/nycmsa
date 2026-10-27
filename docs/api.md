@@ -28,10 +28,12 @@ address is a deployment choice, not an authentication check.
 
 | Method and path | Purpose | Success | Errors |
 | --- | --- | --- | --- |
-| `GET /` | Questions, program codes (filtered by repeated `district` keys), recent runs | 200 HTML | |
+| `GET /` | Questions and recent runs; `ranking=K1,K2` prefills the list from the picker | 200 HTML | |
 | `POST /simulate` | Form submit | 303 to `/runs/{id}` | 422 HTML with the message |
 | `GET /runs/{id}` | Report page | 200 HTML | 404 |
 | `GET /scan` | Scan questions and results | 200 HTML | 422 HTML |
+| `GET /pick` | Program picker: every program with district, kind, and screened filters; the chosen list is kept in the browser | 200 HTML | |
+| `GET /profiles` | What each program is about, with tags and evidence, filtered by repeated `district` keys | 200 HTML | |
 | `GET /programs` | Program definitions, filtered by repeated `district` keys | 200 HTML | |
 | `POST /api/simulate` | Run a simulation | 201 JSON run | 422 |
 | `GET /api/runs` | Recent runs | 200 JSON array | |
@@ -137,6 +139,8 @@ nycmsa sim   [--programs data/programs.json] [--student data/student.json]
 nycmsa scan  CATALOG.json [--frl] [--attrs d15,d20] [--lottery BD] [--csv out.csv]
 nycmsa fetch        [--districts all] --database-url URL
 nycmsa fetch-scores [--source infohub|open-data] --database-url URL
+nycmsa fetch-profiles --database-url URL
+nycmsa reclassify-profiles --database-url URL
 nycmsa import       [--programs data/programs.json] [--student data/student.json] --database-url URL
 nycmsa bootstrap    [--programs ...] [--student ...] [--districts all]
                     [--source infohub|open-data] --database-url URL
@@ -147,3 +151,10 @@ nycmsa serve        [--bind 127.0.0.1:8080] --database-url URL
 filter; the default is `info`. A failed command exits with status 1 and
 prints the error chain to stderr. `sim` and `scan` read files and need no
 database.
+
+## Browser storage
+
+The picker keeps the chosen list and its filters, and the questions page
+keeps its answers, in the browser's `localStorage` under keys that start
+with `nycmsa.`. Nothing is sent to the server until the form is
+submitted. The Reset buttons clear those keys.

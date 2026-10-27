@@ -42,8 +42,10 @@
 
   <fieldset>
     <legend>Which programs are you ranking, in order?</legend>
-    <input type="text" name="ranking" value="{{ form.ranking }}" required>
-    <div class="hint">Program codes, best first, separated by commas. Find the codes in the list below.</div>
+    <p><a class="button" href="/pick">Choose programs</a> <span class="hint">Opens the full list with filters by district, kind of program, and how it picks students.</span></p>
+    <div class="chips" id="ranking-chips"></div>
+    <input type="text" name="ranking" id="ranking" value="{{ form.ranking }}" required>
+    <div class="hint">Program codes, best first, separated by commas. Click × on a code to remove it.</div>
     <details>
       <summary class="muted">Siblings, zones, and continuing students</summary>
       <div class="hint">Schools give priority to these families first. Enter program codes, separated by commas.</div>
@@ -74,24 +76,9 @@
     </div>
   </fieldset>
 
-  <button type="submit">Show our chances</button>
+  <p><button type="submit">Show our chances</button> <button type="button" id="reset-answers" class="secondary">Reset answers</button></p>
 </form>
 
-<h2>Program codes</h2>
-<p class="muted">Showing districts {{ shown_districts }}. Click a district to add or remove it.</p>
-<div class="chips">
-{% for l in district_links %}
-  <a class="chip-link{% if l.active %} active{% endif %}" href="{{ l.href }}">{{ l.label }}</a>
-{% endfor %}
-</div>
-<table>
-  <thead><tr><th>Code</th><th>District</th><th>Program</th><th>Picks students by</th></tr></thead>
-  <tbody>
-  {% for p in programs %}
-    <tr><td><code>{{ p.code }}</code></td><td>{{ p.district }}</td><td>{{ p.name }}</td><td>{{ p.how }}</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
 <p class="muted">Last year's seats and applicants for each priority group are on the <a href="/programs">numbers page</a>.</p>
 
 <h2>Earlier results</h2>
@@ -107,4 +94,60 @@
   </tbody>
 </table>
 {% endif %}
+<script>
+(function () {
+  // The ranking has one home: nycmsa.ranking, shared with the picker.
+  // nycmsa.answers keeps every other field.
+  var KEY = 'nycmsa.answers', RKEY = 'nycmsa.ranking';
+  var form = document.querySelector('form[action="/simulate"]');
+  var ranking = document.getElementById('ranking');
+  function load(key) { try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; } }
+  function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} }
+  function codes() { return ranking.value.split(/[\s,]+/).filter(function (c) { return c; }); }
+  function renderChips() {
+    var box = document.getElementById('ranking-chips');
+    box.innerHTML = '';
+    codes().forEach(function (code, i) {
+      var span = document.createElement('span');
+      span.className = 'code-chip';
+      span.textContent = (i + 1) + '. ' + code + ' ';
+      var x = document.createElement('button');
+      x.type = 'button'; x.className = 'x'; x.title = 'Remove ' + code; x.textContent = '×';
+      x.onclick = function () { var c = codes(); c.splice(i, 1); ranking.value = c.join(', '); save(RKEY, c); renderChips(); };
+      span.appendChild(x);
+      box.appendChild(span);
+    });
+  }
+  var showingError = !!document.querySelector('.error');
+  var fromPicker = new URLSearchParams(location.search).has('ranking');
+  if (!showingError) {
+    var saved = load(KEY);
+    if (saved) {
+      Array.prototype.forEach.call(form.elements, function (el) {
+        if (!el.name || el.name === 'ranking' || !(el.name in saved)) return;
+        if (el.type === 'checkbox' || el.type === 'radio') { el.checked = saved[el.name].indexOf(el.value) >= 0; }
+        else { el.value = saved[el.name]; }
+      });
+    }
+    var picked = load(RKEY);
+    if (fromPicker) { save(RKEY, codes()); }
+    else if (picked && picked.length) { ranking.value = picked.join(', '); }
+  }
+  ranking.addEventListener('input', function () { save(RKEY, codes()); renderChips(); });
+  form.addEventListener('submit', function () {
+    var data = {};
+    Array.prototype.forEach.call(form.elements, function (el) {
+      if (!el.name || el.name === 'ranking') return;
+      if (el.type === 'checkbox' || el.type === 'radio') { if (!data[el.name]) data[el.name] = []; if (el.checked) data[el.name].push(el.value); }
+      else { data[el.name] = el.value; }
+    });
+    save(KEY, data); save(RKEY, codes());
+  });
+  document.getElementById('reset-answers').onclick = function () {
+    try { localStorage.removeItem(KEY); localStorage.removeItem(RKEY); localStorage.removeItem('nycmsa.pickerFilters'); } catch (e) {}
+    location.href = '/';
+  };
+  renderChips();
+})();
+</script>
 {% endblock %}

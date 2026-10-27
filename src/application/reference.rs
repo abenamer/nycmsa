@@ -4,12 +4,13 @@
 
 use std::fmt;
 
-use crate::domain::{ProgramDefinitions, Student, TestResults};
+use crate::domain::{ProgramDefinitions, ProgramProfile, Student, TestResults};
 
 use super::download::DistrictFilter;
 use super::ports::{
-    CatalogDownloader, CatalogSnapshot, CatalogStore, Clock, DownloadError, ProgramStore,
-    RepositoryError, Stored, StudentDefaultsStore, TestResultsDownloader, TestResultsStore,
+    CatalogDownloader, CatalogSnapshot, CatalogStore, Clock, DownloadError, ProfileStore,
+    ProgramDetailsDownloader, ProgramStore, RepositoryError, Stored, StudentDefaultsStore,
+    TestResultsDownloader, TestResultsStore,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -78,6 +79,120 @@ impl<D: TestResultsDownloader, S: TestResultsStore, C: Clock> RefreshTestResults
     }
 }
 
+/// What a profile refresh did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefreshOutcome {
+    pub profiles: usize,
+    /// Schools whose lookup failed, with the reason. Their programs are
+    /// absent from the snapshot.
+    pub failed_schools: Vec<(u64, String)>,
+}
+
+/// Looks up every school in the latest catalog snapshot, classifies each
+/// program from its texts, and stores the profiles as a new snapshot.
+/// A failed lookup skips that school; the snapshot is saved when at least
+/// one lookup succeeded.
+pub struct RefreshProfiles<D, S, C> {
+    downloader: D,
+    store: S,
+    clock: C,
+}
+
+impl<D: ProgramDetailsDownloader, S: CatalogStore + ProfileStore, C: Clock>
+    RefreshProfiles<D, S, C>
+{
+    pub fn new(downloader: D, store: S, clock: C) -> Self {
+        Self {
+            downloader,
+            store,
+            clock,
+        }
+    }
+
+    /// `progress` is called after each school with the count so far and
+    /// the total.
+    pub async fn execute(
+        &self,
+        source: &str,
+        mut progress: impl FnMut(usize, usize),
+    ) -> Result<RefreshOutcome, ReferenceError> {
+        let catalog = self
+            .store
+            .latest_catalog()
+            .await?
+            .ok_or(ReferenceError::Missing("catalog snapshot"))?;
+        let ids = catalog.value.school_ids();
+        let mut profiles = Vec::new();
+        let mut failed_schools = Vec::new();
+        for (done, id) in ids.iter().enumerate() {
+            match self.downloader.download(*id).await {
+                Ok(found) => profiles.extend(found.into_iter().map(ProgramProfile::reclassified)),
+                Err(error) => failed_schools.push((*id, error.to_string())),
+            }
+            progress(done + 1, ids.len());
+        }
+        if profiles.is_empty() {
+            if let Some((_, reason)) = failed_schools.first() {
+                return Err(ReferenceError::Download(DownloadError::Request {
+                    url: source.to_owned(),
+                    reason: format!(
+                        "every school lookup failed ({} schools); first error: {reason}",
+                        failed_schools.len()
+                    ),
+                }));
+            }
+        }
+        let source = if failed_schools.is_empty() {
+            source.to_owned()
+        } else {
+            format!(
+                "{source}; {} of {} schools failed",
+                failed_schools.len(),
+                ids.len()
+            )
+        };
+        self.store
+            .save_profiles(&profiles, &source, self.clock.now())
+            .await?;
+        Ok(RefreshOutcome {
+            profiles: profiles.len(),
+            failed_schools,
+        })
+    }
+}
+
+/// Re-runs the classification rules on the latest stored profiles and
+/// stores the result as a new snapshot, without a download.
+pub struct ReclassifyProfiles<S, C> {
+    store: S,
+    clock: C,
+}
+
+impl<S: ProfileStore, C: Clock> ReclassifyProfiles<S, C> {
+    pub fn new(store: S, clock: C) -> Self {
+        Self { store, clock }
+    }
+
+    pub async fn execute(&self) -> Result<usize, ReferenceError> {
+        let latest = self
+            .store
+            .latest_profiles()
+            .await?
+            .ok_or(ReferenceError::Missing("program profiles"))?;
+        let profiles: Vec<ProgramProfile> = latest
+            .value
+            .into_iter()
+            .map(ProgramProfile::reclassified)
+            .collect();
+        const SUFFIX: &str = " (reclassified)";
+        let base = latest.source.trim_end_matches(SUFFIX);
+        self.store
+            .save_profiles(&profiles, &format!("{base}{SUFFIX}"), self.clock.now())
+            .await?;
+        Ok(profiles.len())
+    }
+}
+
 /// Stores the hand-entered programs and the form defaults read from the
 /// seed files.
 pub struct ImportSeeds<S, C> {
@@ -115,20 +230,23 @@ pub struct ReferenceData {
     pub results: Stored<TestResults>,
     pub programs: Stored<ProgramDefinitions>,
     pub student: Stored<Student>,
+    pub profiles: Stored<Vec<ProgramProfile>>,
 }
 
 impl fmt::Display for ReferenceData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "catalog: {} schools ({}); scores: {} schools ({}); programs: {} ({}); defaults ({})",
+            "catalog: {} schools ({}); scores: {} schools ({}); programs: {} ({}); defaults ({}); profiles: {} ({})",
             self.catalog.value.len(),
             self.catalog.source,
             self.results.value.len(),
             self.results.source,
             self.programs.value.len(),
             self.programs.source,
-            self.student.source
+            self.student.source,
+            self.profiles.value.len(),
+            self.profiles.source
         )
     }
 }
@@ -140,6 +258,7 @@ pub struct ReferenceInventory {
     pub results: bool,
     pub programs: bool,
     pub student: bool,
+    pub profiles: bool,
 }
 
 /// Reads the latest snapshots. Every set must exist.
@@ -149,7 +268,7 @@ pub struct LoadReferenceData<S> {
 
 impl<S> LoadReferenceData<S>
 where
-    S: CatalogStore + TestResultsStore + ProgramStore + StudentDefaultsStore,
+    S: CatalogStore + TestResultsStore + ProgramStore + StudentDefaultsStore + ProfileStore,
 {
     pub fn new(store: S) -> Self {
         Self { store }
@@ -161,6 +280,7 @@ where
             results: self.store.latest_test_results().await?.is_some(),
             programs: self.store.latest_programs().await?.is_some(),
             student: self.store.latest_student_defaults().await?.is_some(),
+            profiles: self.store.latest_profiles().await?.is_some(),
         })
     }
 
@@ -186,6 +306,162 @@ where
                 .latest_student_defaults()
                 .await?
                 .ok_or(ReferenceError::Missing("student defaults"))?,
+            profiles: self
+                .store
+                .latest_profiles()
+                .await?
+                .ok_or(ReferenceError::Missing("program profiles"))?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+    use std::time::{Duration, SystemTime};
+
+    use super::*;
+    use crate::application::ports::{
+        CatalogSnapshot, CatalogStore, Clock, DownloadError, ProfileStore,
+        ProgramDetailsDownloader, RepositoryError, Stored,
+    };
+    use crate::domain::ProgramCode;
+
+    /// One school document per id, as the catalog store returns them.
+    struct Store {
+        catalog: CatalogSnapshot,
+        saved: Mutex<Vec<(usize, String)>>,
+    }
+
+    impl Store {
+        fn with_school_ids(ids: &[u64]) -> Self {
+            Self {
+                catalog: CatalogSnapshot {
+                    schools: ids
+                        .iter()
+                        .map(|id| serde_json::json!({ "id": id }))
+                        .collect(),
+                },
+                saved: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CatalogStore for &Store {
+        async fn save_catalog(
+            &self,
+            _: &CatalogSnapshot,
+            _: &str,
+            _: SystemTime,
+        ) -> Result<(), RepositoryError> {
+            unreachable!("not used by RefreshProfiles")
+        }
+
+        async fn latest_catalog(&self) -> Result<Option<Stored<CatalogSnapshot>>, RepositoryError> {
+            Ok(Some(Stored {
+                recorded_at: SystemTime::UNIX_EPOCH,
+                source: "test".to_owned(),
+                value: self.catalog.clone(),
+            }))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ProfileStore for &Store {
+        async fn save_profiles(
+            &self,
+            profiles: &[ProgramProfile],
+            source: &str,
+            _: SystemTime,
+        ) -> Result<(), RepositoryError> {
+            self.saved
+                .lock()
+                .expect("not poisoned")
+                .push((profiles.len(), source.to_owned()));
+            Ok(())
+        }
+
+        async fn latest_profiles(
+            &self,
+        ) -> Result<Option<Stored<Vec<ProgramProfile>>>, RepositoryError> {
+            Ok(None)
+        }
+    }
+
+    /// Fails for the listed school ids and returns one profile for the rest.
+    struct Downloader {
+        failing: Vec<u64>,
+    }
+
+    impl ProgramDetailsDownloader for Downloader {
+        async fn download(&self, school_id: u64) -> Result<Vec<ProgramProfile>, DownloadError> {
+            if self.failing.contains(&school_id) {
+                return Err(DownloadError::Request {
+                    url: format!("school/{school_id}"),
+                    reason: "HTTP 502".to_owned(),
+                });
+            }
+            Ok(vec![ProgramProfile {
+                code: ProgramCode::parse(&format!("K{school_id:03}A")).expect("valid"),
+                dbn: format!("20K{school_id:03}"),
+                program_name: "Science Academy".to_owned(),
+                school_name: String::new(),
+                method: "Screened".to_owned(),
+                description: String::new(),
+                overview: String::new(),
+                academic_opportunities: String::new(),
+                art_courses: String::new(),
+                language_classes: String::new(),
+                scores: Vec::new(),
+                evidence: Vec::new(),
+            }])
+        }
+    }
+
+    struct FixedClock;
+
+    impl Clock for FixedClock {
+        fn now(&self) -> SystemTime {
+            SystemTime::UNIX_EPOCH + Duration::from_secs(1)
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_school_is_skipped_and_counted() {
+        let store = Store::with_school_ids(&[1, 2, 3]);
+        let refresh = RefreshProfiles::new(Downloader { failing: vec![2] }, &store, FixedClock);
+        let outcome = refresh
+            .execute("MySchools", |_, _| {})
+            .await
+            .expect("succeeds");
+        assert_eq!(outcome.profiles, 2);
+        assert_eq!(outcome.failed_schools.len(), 1);
+        assert_eq!(outcome.failed_schools[0].0, 2);
+        let saved = store.saved.lock().expect("not poisoned");
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].0, 2);
+        assert_eq!(saved[0].1, "MySchools; 1 of 3 schools failed");
+    }
+
+    #[tokio::test]
+    async fn nothing_is_saved_when_every_school_fails() {
+        let store = Store::with_school_ids(&[1, 2]);
+        let refresh = RefreshProfiles::new(
+            Downloader {
+                failing: vec![1, 2],
+            },
+            &store,
+            FixedClock,
+        );
+        let error = refresh
+            .execute("MySchools", |_, _| {})
+            .await
+            .expect_err("fails");
+        assert!(matches!(error, ReferenceError::Download(_)));
+        assert!(error
+            .to_string()
+            .contains("every school lookup failed (2 schools)"));
+        assert!(store.saved.lock().expect("not poisoned").is_empty());
     }
 }

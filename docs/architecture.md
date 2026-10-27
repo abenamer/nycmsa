@@ -39,6 +39,10 @@ through the `CatalogStore` port (`adapters::PostgresReferenceData`).
 (`adapters::InfoHubClient` by default, `adapters::NycOpenDataClient` on
 request) and `TestResultsStore`. `ImportSeeds`
 stores the seed files through `ProgramStore` and `StudentDefaultsStore`.
+`RefreshProfiles` reads the school ids from the latest catalog snapshot,
+downloads each school's detail page through `ProgramDetailsDownloader`
+(`adapters::MySchoolsApiClient`), classifies the programs with the pure
+`domain::classify_profile`, and stores them through `ProfileStore`.
 See [ADR 0004](decisions/0004-reference-data-in-postgres.md).
 
 At startup `composition::simulation_programs` derives the simulation's
@@ -58,7 +62,7 @@ hand-entered programs on top.
 | `adapters::infohub` | Downloads and reads the DOE InfoHub results workbooks. |
 | `adapters::open_data` | Downloads state test results from NYC Open Data. |
 | `adapters::test_results` | Reads and writes a results CSV for offline tools. |
-| `adapters::postgres_reference` | PostgreSQL store of the catalog, results, programs, and defaults. |
+| `adapters::postgres_reference` | PostgreSQL store of the catalog, results, programs, defaults, and profiles. |
 | `adapters::in_memory_runs` | Bounded in-process run store. |
 | `adapters::postgres_runs` | PostgreSQL run store through SQLx. |
 | `adapters::http` | Axum routes, Askama pages, JSON API. |

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}What each program is about{% endblock %}
+{% block content %}
+<h1>What each program is about</h1>
+<p class="muted">For every school in the catalog we read its MySchools page: the school overview, the course lists, and each program's description. The "kind of program" tags come from whole words found in the texts, each with a confidence. A match in the admissions method, the program name, the program description, or the school name counts a lot; a match in the school overview counts a little, because that text describes the whole school. A kind is a tag at 50% or more; weaker signals are shown with their percentage, and every match is listed. {{ total }} programs have a profile. Read the texts yourself before you trust a tag.</p>
+<p class="muted">Showing districts {{ shown_districts }}. Click a district to add or remove it.</p>
+<div class="chips">
+{% for l in district_links %}
+  <a class="chip-link{% if l.active %} active{% endif %}" href="{{ l.href }}">{{ l.label }}</a>
+{% endfor %}
+</div>
+{% for p in profiles %}
+<h2 id="{{ p.code }}">{{ p.school }} <span class="muted">· {{ p.program }} · <code>{{ p.code }}</code> · District {{ p.district }} · {{ p.method }}</span></h2>
+<p><strong>Kind:</strong> {% for t in p.tags %}{{ t }}{% if !loop.last %}, {% endif %}{% endfor %}{% if p.tags.is_empty() %}General (nothing reached 50%){% endif %}</p>
+{% if !p.weaker.is_empty() %}<p class="hint">Weaker signals: {% for w in p.weaker %}{{ w }}{% if !loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+{% if !p.evidence.is_empty() %}
+<details><summary class="muted">How the confidence was computed ({{ p.evidence.len() }} matches)</summary>
+<ul class="plain">
+{% for e in p.evidence %}<li>{{ e }}</li>{% endfor %}
+</ul>
+<p class="hint">Each match adds its text's weight; a kind's confidence is one minus the product of (1 − weight) over its matches. A kind is a tag at 50% or more.</p>
+</details>
+{% endif %}
+{% if !p.description.is_empty() %}<p><strong>Program description:</strong> {{ p.description }}</p>{% endif %}
+{% if !p.overview.is_empty() %}<details><summary class="muted">School overview</summary><p>{{ p.overview }}</p></details>{% endif %}
+{% if !p.academic_opportunities.is_empty() %}<p class="hint">Academic opportunities: {{ p.academic_opportunities }}</p>{% endif %}
+{% if !p.art_courses.is_empty() %}<p class="hint">Art courses: {{ p.art_courses }}</p>{% endif %}
+{% if !p.language_classes.is_empty() %}<p class="hint">Language classes: {{ p.language_classes }}</p>{% endif %}
+{% endfor %}
+{% if profiles.is_empty() %}<p class="muted">No profiles for these districts.</p>{% endif %}
+{% endblock %}

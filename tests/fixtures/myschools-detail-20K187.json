@@ -1,0 +1,202 @@
+{
+ "id": 121171,
+ "name": "The Christa McAuliffe School\\I.S. 187  (20K187)",
+ "school": {
+  "name": "THE CHRISTA MCAULIFFE SCHOOL\\I.S. 187 (20K187)",
+  "dbn": "20K187",
+  "district": {
+   "id": 91,
+   "borough": "Brooklyn",
+   "code": "20",
+   "name": "DISTRICT 20",
+   "name_en": "DISTRICT 20",
+   "name_ar": null,
+   "name_bn": null,
+   "name_zh_hant": null,
+   "name_zh_hans": null,
+   "name_sq": null,
+   "name_fr": null,
+   "name_ht": null,
+   "name_ko": null,
+   "name_ru": null,
+   "name_es": null,
+   "name_ur": null,
+   "name_uk": null,
+   "name_uz": null,
+   "is_under_represented": false,
+   "is_in_person": true
+  }
+ },
+ "overview": "Our school is a place of wonder and growth. By providing a small school environment via our academy structure, we foster nurturing and collegial relationships among students and staff. We collaborate with families to help students reach their greatest potential.A thematic approach offers students experiences that transcend typical curricula and provide exciting opportunities for real-world learning. Our school provides highly specialized educational programs for all students, serving children with severe disabilities who may be appropriate for our ACES program to accelerated and high performing students in our general education programs. Teachers collaborate and design courses incorporating academy themes. Problem-centered learning approaches in conjunction with the teaching of both oracy and social-emotional skills are at the foundation of each course.Students are accepted into one of three academies and more information is available on our website at IS187.com. Whether your child is learning at an accelerated pace or has a disability requiring intensive intervention, The Christa McAuliffe School is a place where all children are supported, encouraged, and loved.",
+ "academic_opportunities": [],
+ "art_courses": [
+  {
+   "name": "Traditional and Studio Art"
+  },
+  {
+   "name": "General Visual Arts"
+  },
+  {
+   "name": "Exploring Music"
+  },
+  {
+   "name": "Chorus/Singing"
+  },
+  {
+   "name": "Band/Brass/Percussion/Woodwinds"
+  }
+ ],
+ "language_classes": [],
+ "programs": [
+  {
+   "program": {
+    "code": "K187A",
+    "name": "Academy for Scientific Research",
+    "admission_process": "Middle School",
+    "is_shs": false,
+    "is_lg": false,
+    "is_gt": false,
+    "is_ms": true,
+    "is_pk": false,
+    "is_3k": false,
+    "is_el": false,
+    "is_hs": false,
+    "enable_waitlist_on_parent_portal": false
+   },
+   "name": "Academy for Scientific Research (K187A)",
+   "admissions_method": {
+    "name": "Screened",
+    "description": "Students are admitted based on their course grades",
+    "name_en": "Screened",
+    "loo_contents": []
+   },
+   "description": "",
+   "selection_criteria": []
+  },
+  {
+   "program": {
+    "code": "K187C",
+    "name": "The Academy of Urban Design",
+    "admission_process": "Middle School",
+    "is_shs": false,
+    "is_lg": false,
+    "is_gt": false,
+    "is_ms": true,
+    "is_pk": false,
+    "is_3k": false,
+    "is_el": false,
+    "is_hs": false,
+    "enable_waitlist_on_parent_portal": false
+   },
+   "name": "The Academy of Urban Design (K187C)",
+   "admissions_method": {
+    "name": "Screened",
+    "description": "Students are admitted based on their course grades",
+    "name_en": "Screened",
+    "loo_contents": []
+   },
+   "description": "Pending approval by the Panel for Education Policy (PEP), this program will be located at a newly constructed secondary site of Christa McAuliffe, located at 6303 14th Avenue, Brooklyn, NY 11219. The PEP is expected to vote on this proposal at its January 20, 2027, meeting.",
+   "selection_criteria": []
+  },
+  {
+   "program": {
+    "code": "K187X",
+    "name": "The Christa Mcauliffe School ASD NEST Program",
+    "admission_process": "Middle School",
+    "is_shs": false,
+    "is_lg": false,
+    "is_gt": false,
+    "is_ms": true,
+    "is_pk": false,
+    "is_3k": false,
+    "is_el": false,
+    "is_hs": false,
+    "enable_waitlist_on_parent_portal": false
+   },
+   "name": "The Christa Mcauliffe School ASD NEST Program (K187X)",
+   "admissions_method": {
+    "name": "ASD/ACES Program",
+    "description": "",
+    "name_en": "ASD/ACES Program",
+    "loo_contents": []
+   },
+   "description": "Pending approval by the Panel for Education Policy (PEP), this program will be located at a newly constructed secondary site of Christa McAuliffe, located at 6303 14th Avenue, Brooklyn, NY 11219. The PEP is expected to vote on this proposal at its January 20, 2027, meeting.",
+   "selection_criteria": []
+  },
+  {
+   "program": {
+    "code": "K187B",
+    "name": "Academy for Arts & Humanities",
+    "admission_process": "Middle School",
+    "is_shs": false,
+    "is_lg": false,
+    "is_gt": false,
+    "is_ms": true,
+    "is_pk": false,
+    "is_3k": false,
+    "is_el": false,
+    "is_hs": false,
+    "enable_waitlist_on_parent_portal": false
+   },
+   "name": "Academy for Arts & Humanities (K187B)",
+   "admissions_method": {
+    "name": "Screened",
+    "description": "Students are admitted based on their course grades",
+    "name_en": "Screened",
+    "loo_contents": []
+   },
+   "description": "",
+   "selection_criteria": []
+  },
+  {
+   "program": {
+    "code": "K187D",
+    "name": "Academy for Business and Law",
+    "admission_process": "Middle School",
+    "is_shs": false,
+    "is_lg": false,
+    "is_gt": false,
+    "is_ms": true,
+    "is_pk": false,
+    "is_3k": false,
+    "is_el": false,
+    "is_hs": false,
+    "enable_waitlist_on_parent_portal": false
+   },
+   "name": "Academy for Business and Law (K187D)",
+   "admissions_method": {
+    "name": "Screened",
+    "description": "Students are admitted based on their course grades",
+    "name_en": "Screened",
+    "loo_contents": []
+   },
+   "description": "",
+   "selection_criteria": []
+  },
+  {
+   "program": {
+    "code": "K187Y",
+    "name": "The Christa Mcauliffe School ACES 12:1:1 Program",
+    "admission_process": "Middle School",
+    "is_shs": false,
+    "is_lg": false,
+    "is_gt": false,
+    "is_ms": true,
+    "is_pk": false,
+    "is_3k": false,
+    "is_el": false,
+    "is_hs": false,
+    "enable_waitlist_on_parent_portal": false
+   },
+   "name": "The Christa Mcauliffe School ACES 12:1:1 Program (K187Y)",
+   "admissions_method": {
+    "name": "ASD/ACES Program",
+    "description": "",
+    "name_en": "ASD/ACES Program",
+    "loo_contents": []
+   },
+   "description": "",
+   "selection_criteria": []
+  }
+ ]
+}

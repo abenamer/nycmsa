@@ -38,6 +38,12 @@ pub enum Command {
     /// Download state test results per school from NYC Open Data into the
     /// database.
     FetchScores(FetchScoresArgs),
+    /// Look up every school's detail page on MySchools, classify each
+    /// program, and store the profiles in the database.
+    FetchProfiles(FetchProfilesArgs),
+    /// Re-run the kind-of-program rules on the stored profiles, without a
+    /// download.
+    ReclassifyProfiles(FetchProfilesArgs),
     /// Store the hand-entered programs and form defaults from the seed
     /// files in the database.
     Import(ImportArgs),
@@ -160,6 +166,12 @@ pub enum ScoreSource {
 pub struct FetchScoresArgs {
     #[arg(long, value_enum, default_value_t)]
     pub source: ScoreSource,
+    #[command(flatten)]
+    pub database: DatabaseArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct FetchProfilesArgs {
     #[command(flatten)]
     pub database: DatabaseArgs,
 }

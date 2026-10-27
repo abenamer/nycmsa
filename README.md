@@ -19,7 +19,9 @@ typed errors, and an OKF documentation bundle in [`docs/`](docs/index.md).
 - Which school district you live in (any of the 32), free or reduced-price
   lunch, and the programs where a sibling, zone, or continuing-student
   priority applies.
-- The ranked list of program codes.
+- The ranked list of program codes, chosen on a picker page with district,
+  kind-of-program, and screened filters; the list and the answers are
+  remembered in the browser until reset.
 - Two assumption chips: whether waitlists draw a new number or keep the
   old one, and whether to take last year's numbers as published or assume
   schools reach further down their lists.

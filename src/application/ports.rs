@@ -4,6 +4,7 @@ use std::fmt;
 use std::num::NonZeroU64;
 use std::time::SystemTime;
 
+use crate::domain::ProgramProfile;
 use crate::domain::{DistrictCode, ProgramDefinitions, Report, Student, TestResults};
 
 use super::download::DistrictFilter;
@@ -96,6 +97,14 @@ pub struct CatalogSnapshot {
 impl CatalogSnapshot {
     pub fn len(&self) -> usize {
         self.schools.len()
+    }
+
+    /// The MySchools school ids in the snapshot, for detail lookups.
+    pub fn school_ids(&self) -> Vec<u64> {
+        self.schools
+            .iter()
+            .filter_map(|s| s.get("id").and_then(serde_json::Value::as_u64))
+            .collect()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -243,4 +252,25 @@ pub trait StudentDefaultsStore {
         recorded_at: SystemTime,
     ) -> Result<(), RepositoryError>;
     async fn latest_student_defaults(&self) -> Result<Option<Stored<Student>>, RepositoryError>;
+}
+
+/// Outbound port: the detail document of one school, as one unscored
+/// profile per program. The use case runs the classification.
+pub trait ProgramDetailsDownloader {
+    // Awaited on the main task; no `Send` bound is needed.
+    #[allow(async_fn_in_trait)]
+    async fn download(&self, school_id: u64) -> Result<Vec<ProgramProfile>, DownloadError>;
+}
+
+/// Outbound port: versioned program profiles.
+#[async_trait::async_trait]
+pub trait ProfileStore {
+    async fn save_profiles(
+        &self,
+        profiles: &[ProgramProfile],
+        source: &str,
+        recorded_at: SystemTime,
+    ) -> Result<(), RepositoryError>;
+    async fn latest_profiles(&self)
+        -> Result<Option<Stored<Vec<ProgramProfile>>>, RepositoryError>;
 }

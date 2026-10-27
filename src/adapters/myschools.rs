@@ -16,7 +16,7 @@ use serde::Deserialize;
 use crate::domain::catalog::InvalidDistrictCode;
 use crate::domain::{
     Borough, CatalogGroup, CatalogProgram, DemandPair, DistrictCode, GroupDemandText,
-    InvalidProgramCode, PriorityCriterion, ProgramCode,
+    InvalidProgramCode, PriorityCriterion, ProgramCode, ProgramProfile,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -499,6 +499,32 @@ mod tests {
     }
 
     #[test]
+    fn detail_fixture_gives_labelled_texts_per_program() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/myschools-detail-20K187.json");
+        let document: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).expect("reads")).expect("json");
+        let details = program_details_from_document(&document).expect("parses");
+        assert_eq!(details.len(), 6);
+        let k187a = details
+            .iter()
+            .find(|d| d.code.as_str() == "K187A")
+            .expect("present");
+        assert_eq!(k187a.dbn, "20K187");
+        assert_eq!(k187a.program_name, "Academy for Scientific Research");
+        assert_eq!(k187a.method, "Screened");
+        assert!(k187a
+            .overview
+            .starts_with("Our school is a place of wonder"));
+        assert!(k187a.art_courses.contains("Chorus"));
+        let k187c = details
+            .iter()
+            .find(|d| d.code.as_str() == "K187C")
+            .expect("present");
+        assert!(k187c.description.starts_with("Pending approval"));
+    }
+
+    #[test]
     fn the_fixture_catalog_loads() {
         let path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/myschools_d15_d20.json");
@@ -508,4 +534,85 @@ mod tests {
         let documents: Vec<serde_json::Value> = serde_json::from_str(&text).expect("json");
         assert_eq!(catalog_from_documents(&documents).expect("parses"), d15_d20);
     }
+}
+
+/// The fields of a MySchools school detail document that describe its
+/// programs.
+#[derive(Debug, Deserialize)]
+struct DetailDto {
+    school: SchoolDto,
+    #[serde(default)]
+    overview: Option<String>,
+    #[serde(default)]
+    academic_opportunities: Vec<NamedDto>,
+    #[serde(default)]
+    art_courses: Vec<NamedDto>,
+    #[serde(default)]
+    language_classes: Vec<NamedDto>,
+    #[serde(default)]
+    programs: Vec<DetailProgramDto>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NamedDto {
+    #[serde(default)]
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DetailProgramDto {
+    program: ProgramRefDto,
+    name: String,
+    admissions_method: Option<MethodDto>,
+    #[serde(default)]
+    description: Option<String>,
+}
+
+fn names(items: &[NamedDto]) -> String {
+    items
+        .iter()
+        .filter_map(|i| i.name.as_deref())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Turns a school detail document into one unscored [`ProgramProfile`] per
+/// program. The use case scores it from the stored texts, so a fresh fetch
+/// and a reclassification read the same texts.
+pub fn program_details_from_document(
+    document: &serde_json::Value,
+) -> Result<Vec<ProgramProfile>, CatalogLoadError> {
+    let detail: DetailDto = serde_json::from_value(document.clone())?;
+    let school_name = title_case(before_parenthesis(&detail.school.name));
+    let dbn = detail.school.dbn.trim().to_uppercase();
+    let overview = detail.overview.unwrap_or_default().trim().to_owned();
+    let academic_opportunities = names(&detail.academic_opportunities);
+    let art_courses = names(&detail.art_courses);
+    let language_classes = names(&detail.language_classes);
+    detail
+        .programs
+        .into_iter()
+        .map(|p| {
+            let code = ProgramCode::parse(&p.program.code).map_err(|source| {
+                CatalogLoadError::InvalidProgramCode {
+                    school: school_name.clone(),
+                    source,
+                }
+            })?;
+            Ok(ProgramProfile {
+                code,
+                dbn: dbn.clone(),
+                program_name: before_parenthesis(&p.name).to_owned(),
+                school_name: school_name.clone(),
+                method: p.admissions_method.and_then(|m| m.name).unwrap_or_default(),
+                description: p.description.unwrap_or_default().trim().to_owned(),
+                overview: overview.clone(),
+                academic_opportunities: academic_opportunities.clone(),
+                art_courses: art_courses.clone(),
+                language_classes: language_classes.clone(),
+                scores: Vec::new(),
+                evidence: Vec::new(),
+            })
+        })
+        .collect()
 }
