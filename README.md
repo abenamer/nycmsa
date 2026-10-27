@@ -68,8 +68,11 @@ the named volume `nycmsa_pgdata` and the app serves from it:
 docker compose up --build
 ```
 
-See [operations](docs/operations.md) for backups, restore, migrations,
-and hosting, and the [API reference](docs/api.md) for the JSON endpoints.
+To host it, `deploy/` has a production Compose file and a cloud-init
+file that set up a $6 DigitalOcean Droplet from the image CI publishes.
+See [operations](docs/operations.md) for the steps, backups, restore,
+migrations, and hosting, and the [API reference](docs/api.md) for the
+JSON endpoints.
 
 ## Layout
 

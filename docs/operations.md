@@ -177,10 +177,63 @@ in a few seconds and without a download.
 Expected result: the command prints the number of programs stored. The
 previous set stays in the database.
 
+## Deploy to a DigitalOcean Droplet
+
+The `deploy/` directory holds a production Compose file that runs the
+prebuilt image behind Caddy, and a cloud-init file that turns a fresh
+Ubuntu Droplet into a running server without logging in. CI pushes the
+image to `ghcr.io/abenamer/nycmsa` on every merge to `main` (job
+`docker`, step "Push the image"), so the server never compiles anything.
+
+Prerequisites: a DigitalOcean account with an SSH key added, and the
+container image public under the repository owner's packages (check at
+`https://github.com/abenamer?tab=packages` after the first merge; a
+private package makes the Droplet's image pull fail).
+
+1. In DigitalOcean choose Create, Droplets: region New York, image
+   Ubuntu 24.04 LTS, size Basic, Regular, $6 (1 GB RAM, 25 GB disk).
+   The $4 size is too small for PostgreSQL and the app together.
+2. Under Authentication pick your SSH key. Under Advanced Options tick
+   "Add Initialization scripts (free)" and paste the contents of
+   `deploy/cloud-init.yaml`.
+3. Create the Droplet. After about ten minutes open `http://<droplet IP>/`.
+4. Optional, for HTTPS: point a DNS A record at the Droplet, then on the
+   server set `SITE_ADDRESS=<that name>` in `/opt/nycmsa/.env` and run
+   `cd /opt/nycmsa && docker compose up -d caddy`. Caddy fetches the
+   certificate on the first request.
+
+Expected result: `ssh root@<droplet IP> 'cd /opt/nycmsa && docker compose ps'`
+lists `db`, `app` and `caddy` as running and `init` as exited with code 0;
+`/healthz` through the proxy returns `ok`; `/pick` lists every program.
+cloud-init logs to `/var/log/cloud-init-output.log`; the last line reads
+"nycmsa: cloud-init finished".
+
+What cloud-init sets up: a firewall that admits only SSH, HTTP and HTTPS;
+Docker from Docker's own repository; a 1 GB swap file; unattended
+security updates with a reboot at 05:30 UTC when one is needed; the files
+in `/opt/nycmsa` with a random database password in `.env`; a daily
+`pg_dump` at 03:10 UTC into `/opt/nycmsa/backups` (newest 14 kept); and a
+daily pull of the newest image at 04:17 UTC that restarts the app only
+when the image changed (`update.sh`). Run `/opt/nycmsa/update.sh` by hand
+to deploy a merge at once.
+
+Recovery: if the page does not answer after fifteen minutes, read the
+cloud-init log. An image pull error means the package is private (see
+prerequisites); make it public and run `cd /opt/nycmsa && docker compose
+up -d`. A bootstrap error means a download from MySchools, NYC Open Data
+or InfoHub failed; run `docker compose run --rm init bootstrap` again.
+The backups directory is on the same disk as the database, so copy the
+dumps elsewhere (DigitalOcean Spaces, or `scp` to your machine). Enable
+DigitalOcean's own Droplet backups for a whole-disk fallback.
+
+To rebuild from scratch: destroy the Droplet and create a new one the
+same way; restore a dump with the procedure above if you want the runs
+and snapshots back. Everything else bootstrap downloads again.
+
 ## Hosting elsewhere
 
 Any host that runs a Docker image and gives it a PostgreSQL URL works:
-Cloudflare Containers, Fly.io, Railway, or a VM with Compose. Cloudflare
+Fly.io, Railway, or another VM with `deploy/compose.yaml`. Cloudflare
 Workers run Rust only as WebAssembly without threads or sockets, so the
 Axum server does not fit them; the pure `domain` crate would compile for
 them, with a different inbound adapter.

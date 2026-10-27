@@ -1,0 +1,6 @@
+# SITE_ADDRESS comes from .env: ":80" for plain HTTP on the IP address,
+# or a hostname for automatic HTTPS.
+{$SITE_ADDRESS} {
+	encode gzip
+	reverse_proxy app:8080
+}

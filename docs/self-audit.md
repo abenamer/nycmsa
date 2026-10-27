@@ -134,6 +134,19 @@ explicitly. The picker table now shares the scan page's sort script
 | Code review on pull request 2 | Five findings, all applied: the arrow styling is scoped to the move buttons so × keeps its own look; the sort script uses the column's `cellIndex`, computes each row's key once, and takes Enter or Space on a focused heading with `aria-sort`; one `ScoreCell { shown, raw }` type serves both the scan and picker rows. |
 | Browser check after the review fixes | Passed: × is muted grey at 1.1rem and turns red on hover; the arrows are ink at 0.8rem; focusing "Seats" and pressing Enter twice sorts 662 rows descending with `aria-sort="descending"`, `tabindex="0"` and `role="button"`; Space on "ELA" sorts ascending with blanks last and clears the "Seats" marker; the scan page's "Seats" heading still sorts 642 rows. |
 
+## Local evidence: 2026-10-27 (Droplet deployment files)
+
+Same environment. No Rust code changed.
+
+| Check | Outcome |
+| --- | --- |
+| `docker compose -f deploy/compose.yaml config` with `POSTGRES_PASSWORD` set | Passed; without it Compose stops with "set POSTGRES_PASSWORD in .env", as intended |
+| `deploy/cloud-init.yaml` | Parses as YAML with the expected top-level keys. The cloud-init schema checker was not available here. |
+| `bash -n deploy/update.sh deploy/backup.sh` | Passed |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+| Creating a Droplet from the cloud-init file | Not run: no DigitalOcean credentials in this environment. The first real Droplet is the test; record its outcome here. |
+| CI image push to `ghcr.io/abenamer/nycmsa` | Not run until the change merges: the step runs only on a push to `main`. Check the package exists and is public after the merge. |
+
 ## Remote evidence
 
 | Revision | Run | Outcome |

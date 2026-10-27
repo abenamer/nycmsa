@@ -1,0 +1,75 @@
+# Production deployment on one small server (a $6 DigitalOcean Droplet
+# is enough): PostgreSQL on a named volume, a one-shot bootstrap, the web
+# app from the prebuilt image that CI publishes, and Caddy in front for
+# HTTPS.
+#
+#   cp .env.example .env     # set POSTGRES_PASSWORD and SITE_ADDRESS
+#   docker compose up -d
+#
+# Nothing is built on the server: `app` and `init` pull
+# ghcr.io/abenamer/nycmsa, which the CI `docker` job pushes on every
+# merge to main. deploy/update.sh pulls the newest image and restarts.
+# See docs/operations.md, "Deploy to a DigitalOcean Droplet".
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: nycmsa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: nycmsa
+    volumes:
+      - nycmsa_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nycmsa -d nycmsa"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Fills an empty database (catalog, test results, program profiles,
+  # seed programs); exits at once when everything is already present.
+  init:
+    image: ${NYCMSA_IMAGE:-ghcr.io/abenamer/nycmsa:latest}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://nycmsa:${POSTGRES_PASSWORD}@db:5432/nycmsa
+      RUST_LOG: info
+    command: ["bootstrap"]
+
+  app:
+    image: ${NYCMSA_IMAGE:-ghcr.io/abenamer/nycmsa:latest}
+    depends_on:
+      db:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://nycmsa:${POSTGRES_PASSWORD}@db:5432/nycmsa
+      RUST_LOG: info
+    # No host port: Caddy reaches the app on the Compose network.
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    depends_on:
+      - app
+    environment:
+      # ":80" serves plain HTTP on the IP address. A hostname such as
+      # "chances.example.org" makes Caddy fetch and renew a certificate.
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  nycmsa_pgdata:
+  caddy_data:
+  caddy_config:
