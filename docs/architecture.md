@@ -44,6 +44,11 @@ stores the seed files through `ProgramStore` and `StudentDefaultsStore`.
 downloads each school's detail page through `ProgramDetailsDownloader`
 (`adapters::MySchoolsApiClient`), classifies the programs with the pure
 `domain::classify_profile`, and stores them through `ProfileStore`.
+`RefreshDemand` downloads each year of the DOE's school demand reports
+through `DemandDownloader` (`adapters::InfoHubDemandClient`), skipping a
+year that fails, and stores the history through `DemandStore`. The
+demand set is supplementary: `bootstrap` logs a failed download and goes
+on, and the pages show no history until a later bootstrap succeeds.
 See [ADR 0004](decisions/0004-reference-data-in-postgres.md).
 
 At startup `composition::simulation_programs` derives the simulation's
@@ -61,9 +66,10 @@ hand-entered programs on top.
 | `adapters::myschools` | Parses the MySchools catalog and its prose. |
 | `adapters::myschools_api` | Downloads the catalog over HTTPS. |
 | `adapters::infohub` | Downloads and reads the DOE InfoHub results workbooks. |
+| `adapters::infohub_demand` | Downloads and reads the DOE's yearly reports on school applications, offers and seats. |
 | `adapters::open_data` | Downloads state test results from NYC Open Data. |
 | `adapters::test_results` | Reads and writes a results CSV for offline tools. |
-| `adapters::postgres_reference` | PostgreSQL store of the catalog, results, programs, defaults, and profiles. |
+| `adapters::postgres_reference` | PostgreSQL store of the catalog, results, programs, defaults, profiles, and demand history. |
 | `adapters::postgres` | The PostgreSQL pool and the migrations the stores share. |
 | `adapters::http` | Axum routes, Askama pages, JSON API. |
 | `adapters::cli` | Clap commands and text rendering. |

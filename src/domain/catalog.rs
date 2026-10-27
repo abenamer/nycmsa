@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use super::demand::{DemandHistory, LatestDemand};
 use super::lottery::LotteryPrefix;
 use super::program::{Attribute, GroupDemand, PriorityGroup, Program, ProgramCode, SelectionKind};
 
@@ -816,6 +817,9 @@ pub struct ScanRow {
     pub reach: Reach,
     /// The school's latest state test results, when known.
     pub scores: Option<SchoolScores>,
+    /// The school's latest year in the DOE's demand reports: how many
+    /// applicants listed it, how many were considered, and the offers.
+    pub demand: Option<LatestDemand>,
 }
 
 impl ScanRow {
@@ -866,6 +870,7 @@ fn classify(
 pub fn scan(
     catalog: &[CatalogProgram],
     results: &TestResults,
+    demand: &DemandHistory,
     request: &ScanRequest,
 ) -> Vec<ScanRow> {
     let lottery_fraction = request.lottery.fraction().get();
@@ -896,6 +901,7 @@ pub fn scan(
                 group_share: share,
                 reach: classify(program, slice, share, lottery_fraction),
                 scores: results.get(&program.dbn).copied(),
+                demand: demand.latest(&program.dbn),
             })
         })
         .collect();
@@ -1461,6 +1467,7 @@ mod tests {
         let rows = scan(
             &catalog,
             &TestResults::new(),
+            &DemandHistory::new(),
             &request(&["d15", "d20"], false, "BD"),
         );
         let by_code: Vec<(&str, Reach)> = rows.iter().map(|r| (r.code.as_str(), r.reach)).collect();
@@ -1504,7 +1511,12 @@ mod tests {
                 math_proficient_pct: None,
             },
         );
-        let rows = scan(&catalog, &results, &request(&["d15"], false, "BD"));
+        let rows = scan(
+            &catalog,
+            &results,
+            &DemandHistory::new(),
+            &request(&["d15"], false, "BD"),
+        );
         assert_eq!(rows[0].dbn, "15K442S");
         assert_eq!(
             rows[0].scores.map(|s| s.ela_proficient_pct),
@@ -1513,6 +1525,7 @@ mod tests {
         let none = scan(
             &catalog,
             &TestResults::new(),
+            &DemandHistory::new(),
             &request(&["d15"], false, "BD"),
         );
         assert_eq!(none[0].scores, None);
@@ -1727,6 +1740,7 @@ mod tests {
         let frl = scan(
             &catalog,
             &TestResults::new(),
+            &DemandHistory::new(),
             &request(&["d15"], true, "BD"),
         );
         assert_eq!(frl[0].group_applied, Some(50));
@@ -1734,6 +1748,7 @@ mod tests {
         let non_frl = scan(
             &catalog,
             &TestResults::new(),
+            &DemandHistory::new(),
             &request(&["d15"], false, "BD"),
         );
         assert_eq!(non_frl[0].group_applied, Some(370));

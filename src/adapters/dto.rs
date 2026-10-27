@@ -249,6 +249,13 @@ pub struct ScanRowDto {
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
     pub address: Option<String>,
+    /// The school's latest year in the DOE's demand reports and its grade 6
+    /// figures: applicants who listed the school, applicants considered
+    /// there, and offers.
+    pub school_demand_year: Option<u32>,
+    pub school_listed: Option<u32>,
+    pub school_considered: Option<u32>,
+    pub school_offers: Option<u32>,
 }
 
 pub fn parse_attributes<'a>(
@@ -512,6 +519,10 @@ pub fn scan_row_to_dto(row: &ScanRow) -> ScanRowDto {
         latitude: row.location.map(|l| l.latitude),
         longitude: row.location.map(|l| l.longitude),
         address: row.address.clone(),
+        school_demand_year: row.demand.map(|d| d.year),
+        school_listed: row.demand.and_then(|d| d.figures.listed),
+        school_considered: row.demand.and_then(|d| d.figures.considered),
+        school_offers: row.demand.and_then(|d| d.figures.offers),
     }
 }
 

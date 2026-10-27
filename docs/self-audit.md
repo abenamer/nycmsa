@@ -285,6 +285,30 @@ that reports who ran it.
 | Security review on pull request 12 | No findings. Checked: a leaked deploy key can only trigger `update.sh` (forced command, `restrict`, root-owned script and directory, sudo's `env_reset`); the job runs only for pushes to `main` under `production` with no repository permissions and writes secrets through `printf` from the environment, never into the script text; the fetch from `main` already ran as root before this change. Three hardenings applied: the sudoers rule ends in `""` so only the argument-less call is allowed, the script rejects multi-line keys and runs `ssh-keygen -l` on the key, and the workflow passes `IdentitiesOnly=yes` |
 | Re-test after hardening | A two-line key and a garbage key are rejected (exit 2); the good key leaves one `authorized_keys` line; the workflow call still runs `update.sh` as root; `sudo -n /opt/nycmsa/update.sh evil` as `deploy` is refused |
 
+## Local evidence: 2026-10-27 (school demand history)
+
+Same environment, branch `claude/infohub-demand` over `main` b9374e7.
+A new reference set: the DOE's yearly reports on school applications,
+offers and seats (Local Law 72 of 2018), grade 6, per school and
+residential district, fall 2018 to fall 2025; a `/schools/{dbn}` page;
+"Listed the school" and "Competed" columns on the scan and picker pages
+and in the scan JSON and CSV; and the caveats and domain doc now state
+the DOE's definition of "applicants" (children considered for a seat,
+not everyone who listed the program).
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt --all`, `cargo check --all-targets`, `cargo clippy --all-targets -- -D warnings` | Passed |
+| `cargo test` | 112 unit tests (domain demand helpers, both workbook layouts from fixture files, the refresh use case skipping a failed year) and 17 HTTP tests (school page newest-first, 404 for an unknown DBN, the new columns and JSON fields) passed |
+| `cargo test --test postgres_reference -- --ignored` against the local PostgreSQL 16 | Passed, with the demand round trip (two years, district rows, suppressed cells) |
+| `nycmsa fetch-demand` against the real sources | Read all eight workbooks (six from InfoHub, fall 2020 and 2021 from NYC Open Data attachments) in 87 s; stored 511 schools, 3,827 school-years, 22,740 rows; peak resident memory 244 MB, so the 1 GB Droplet needs its swap during this step |
+| Cross-check | M.S. 442 (15K442) fall 2025 on the school page: 115 seats, 1,585 listed, 564 competed, 138 offers; the same cells read from the workbook with openpyxl before the Rust reader existed. Residential rows sort by competing families: District 15 (930 listed, 358 competed, 97 offers), then 20, 17, 13 |
+| Citywide totals read with openpyxl | Fall 2025: 69,248 seats, 177,502 listings, 73,637 considered, 51,200 offers; the DOE's 2024 release counts 56,206 applicants, so each child listed about three schools and competed at about 1.3 |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+| Not run | The Droplet's bootstrap with the new step (needs the merge); the InfoHub URLs for new years do not exist yet and must be added by hand |
+| Code review on pull request 13 (medium) | Ten findings, all applied: a snapshot missing a year is refreshed on the next bootstrap (`demand_incomplete` compares the stored years with the configured sources); the residential-district label is matched case-insensitively; `DemandHistory` lookups upper-case the DBN like `insert`; a year without an `All Students` figure is left out instead of shown blank; the reader rejects counts above `i32::MAX`; the workbook download and parse-off-thread code is shared with the score reader (`infohub::fetch_workbook`); district rows are sorted on the figures, not on their display strings; `ScanPage::new` reads `ScanFacts` directly; two unused `ScanCatalog` accessors removed; a `ReferenceError::NoDemandReports` variant replaces a misused `DownloadError`, and `DownloadError::Malformed` no longer claims the response should have been JSON |
+| Security review on pull request 13 | No findings. Checked: the `{dbn}` path segment is only compared with catalog DBNs in memory and echoed JSON-escaped in the 404 body; every new query binds its values and the table names are constants; the workbook reader indexes with `get` and saturating casts, a panic in the blocking task becomes an error, and figures from the DOE reach the page only through askama's escaping; the eight report URLs are compile-time constants; the CSV gains numeric cells only |
+
 ## Remote evidence
 
 | Revision | Run | Outcome |

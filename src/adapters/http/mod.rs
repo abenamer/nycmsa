@@ -35,7 +35,9 @@ use super::dto::{
     DEFAULT_TRIALS,
 };
 use choices::{OutlookChoice, TalentTestChoice, WaitlistChoice};
-use views::{HomePage, PickerPage, ProfilesPage, ProgramsPage, ResultPage, ScanPage};
+use views::{
+    HomePage, PickerPage, ProfilesPage, ProgramsPage, ResultPage, ScanFacts, ScanPage, SchoolPage,
+};
 
 /// Request limits (REAS-SEC-001).
 #[derive(Debug, Clone, Copy)]
@@ -130,6 +132,7 @@ pub fn router(state: AppState, limits: &HttpLimits) -> Router {
         .route("/profiles", get(profiles_page))
         .route("/scan", get(scan_page))
         .route("/programs", get(programs_page))
+        .route("/schools/{dbn}", get(school_page))
         .route("/api/simulate", post(simulate_json))
         .route("/api/scan", get(scan_json))
         .route("/api/scan.csv", get(scan_csv))
@@ -160,6 +163,8 @@ pub enum HttpError {
     Csv(#[from] csv::Error),
     #[error("{0}")]
     Internal(String),
+    #[error("{0}")]
+    NotFound(String),
 }
 
 impl HttpError {
@@ -168,6 +173,7 @@ impl HttpError {
             HttpError::Invalid(_) | HttpError::Simulation(_) | HttpError::Form(_) => {
                 StatusCode::UNPROCESSABLE_ENTITY
             }
+            HttpError::NotFound(_) => StatusCode::NOT_FOUND,
             HttpError::Render(_) | HttpError::Csv(_) | HttpError::Internal(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -536,10 +542,7 @@ async fn scan_page(
     let template = ScanPage::new(
         &query,
         computed.as_ref().map(|(r, rows)| (r, rows.as_slice())),
-        &state.scan.districts(),
-        state.scan.program_count(),
-        state.scan.schools_with_scores(),
-        state.scan.scores_year(),
+        &ScanFacts::of(&state.scan),
         error,
     );
     Ok((status, page(&template)?).into_response())
@@ -590,6 +593,18 @@ async fn programs_page(
     RawQuery(raw): RawQuery,
 ) -> Result<Html<String>, HttpError> {
     page(&ProgramsPage::new(&state, &district_filter(raw.as_deref())))
+}
+
+/// One school: its programs and the DOE's demand history for it. The DBN
+/// is matched case-insensitively against the catalog; anything else is
+/// 404, so the path never reaches a query.
+async fn school_page(
+    State(state): State<AppState>,
+    axum::extract::Path(dbn): axum::extract::Path<String>,
+) -> Result<Html<String>, HttpError> {
+    let template = SchoolPage::new(&state, &dbn)
+        .ok_or_else(|| HttpError::NotFound(format!("no school {dbn} in the catalog")))?;
+    page(&template)
 }
 
 async fn programs_json(State(state): State<AppState>) -> Result<Response, HttpError> {

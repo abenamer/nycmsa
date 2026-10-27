@@ -41,6 +41,7 @@ deployment that needs fairness puts the limit in the proxy in front.
 | `GET /pick` | Program picker: every program in a sortable table with district, kind, and screened filters; the chosen list is kept in the browser | 200 HTML | |
 | `GET /profiles` | What each program is about, with tags and evidence, filtered by repeated `district` keys | 200 HTML | |
 | `GET /programs` | Program definitions, filtered by repeated `district` keys | 200 HTML | |
+| `GET /schools/{dbn}` | One school: its catalog programs and the DOE's grade 6 demand history, year by year and by residential district | 200 HTML | 404 for a DBN not in the catalog |
 | `POST /api/simulate` | Run a simulation | 200 JSON report | 422 |
 | `GET /api/scan` | Scan rows | 200 JSON | 422 |
 | `GET /api/scan.csv` | Scan rows as CSV | 200 `text/csv` | 422 |
@@ -131,8 +132,11 @@ not FRL, and `BD`; the HTML page shows blank questions instead. The
 response lists the attributes, the FRL flag, the lottery prefix and
 fraction, and the rows in reach order. Each row also carries the school's
 `dbn`, `scores_year`, `ela_proficient_pct`, `math_proficient_pct`,
-`latitude`, `longitude`, and `address`.
-The CSV has the Python scanner's columns followed by those seven.
+`latitude`, `longitude`, `address`, and the school's latest year in the
+DOE's demand reports: `school_demand_year`, `school_listed` (applicants
+who named the school on their application), `school_considered`
+(applicants not matched to a more preferred choice) and `school_offers`.
+The CSV has the Python scanner's columns followed by those eleven.
 
 ## Command line
 
@@ -145,6 +149,7 @@ nycmsa scan  CATALOG.json [--frl] [--attrs d15,d20] [--lottery BD] [--csv out.cs
 nycmsa fetch        [--districts all] --database-url URL
 nycmsa fetch-scores [--source infohub|open-data] --database-url URL
 nycmsa fetch-profiles --database-url URL
+nycmsa fetch-demand   --database-url URL
 nycmsa reclassify-profiles --database-url URL
 nycmsa import       [--programs data/programs.json] [--student data/student.json] --database-url URL
 nycmsa bootstrap    [--programs ...] [--student ...] [--districts all]

@@ -1,5 +1,5 @@
 //! Outbound adapter: the reference data in PostgreSQL. It implements the
-//! four store ports on one pool. Each save is one transaction
+//! six store ports on one pool. Each save is one transaction
 //! (REAS-DATA-002); each read is two explicit queries.
 
 use std::time::SystemTime;
@@ -12,12 +12,12 @@ use time::OffsetDateTime;
 use serde::{Deserialize, Serialize};
 
 use crate::application::{
-    CatalogSnapshot, CatalogStore, ProfileStore, ProgramStore, RepositoryError, Stored,
-    StudentDefaultsStore, TestResultsStore,
+    CatalogSnapshot, CatalogStore, DemandStore, ProfileStore, ProgramStore, RepositoryError,
+    Stored, StudentDefaultsStore, TestResultsStore,
 };
 use crate::domain::{
-    Evidence, FocusScore, ProgramCode, ProgramDefinitions, ProgramFocus, ProgramProfile,
-    SchoolScores, Student, TestResults,
+    DemandFigures, DemandHistory, Evidence, FocusScore, ProgramCode, ProgramDefinitions,
+    ProgramFocus, ProgramProfile, SchoolDemandYear, SchoolScores, Student, TestResults,
 };
 
 use super::dto::{
@@ -194,6 +194,136 @@ impl TestResultsStore for PostgresReferenceData {
             recorded_at,
             source,
             value: results,
+        }))
+    }
+}
+
+fn to_i32(value: Option<u32>) -> Option<i32> {
+    value.map(|v| i32::try_from(v).unwrap_or(i32::MAX))
+}
+
+fn to_u32(id: i64, value: Option<i32>) -> Result<Option<u32>, RepositoryError> {
+    value
+        .map(|v| u32::try_from(v).map_err(|e| corrupt(id, e)))
+        .transpose()
+}
+
+/// Rows per `INSERT ... SELECT FROM UNNEST` statement. A full history is
+/// about 50,000 rows; one statement per 5,000 keeps the arrays modest.
+const DEMAND_CHUNK: usize = 5_000;
+
+#[async_trait::async_trait]
+impl DemandStore for PostgresReferenceData {
+    async fn save_demand(
+        &self,
+        history: &DemandHistory,
+        source: &str,
+        recorded_at: SystemTime,
+    ) -> Result<(), RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(unavailable)?;
+        let id: i64 = sqlx::query(
+            "INSERT INTO demand_snapshots (recorded_at, source) VALUES ($1, $2) RETURNING id",
+        )
+        .bind(OffsetDateTime::from(recorded_at))
+        .bind(source)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(unavailable)?
+        .try_get("id")
+        .map_err(unavailable)?;
+        // (dbn, year, district, figures); '' is the all-applicants row.
+        let mut rows: Vec<(&str, u32, &str, DemandFigures)> = Vec::new();
+        for (dbn, year) in history.iter() {
+            rows.push((dbn, year.year, "", year.all));
+            for (district, figures) in &year.by_residential_district {
+                rows.push((dbn, year.year, district.as_str(), *figures));
+            }
+        }
+        for chunk in rows.chunks(DEMAND_CHUNK) {
+            let dbns: Vec<String> = chunk.iter().map(|r| r.0.to_owned()).collect();
+            let years: Vec<i32> = chunk
+                .iter()
+                .map(|r| i32::try_from(r.1).unwrap_or(i32::MAX))
+                .collect();
+            let districts: Vec<String> = chunk.iter().map(|r| r.2.to_owned()).collect();
+            let seats: Vec<Option<i32>> = chunk.iter().map(|r| to_i32(r.3.seats)).collect();
+            let listed: Vec<Option<i32>> = chunk.iter().map(|r| to_i32(r.3.listed)).collect();
+            let considered: Vec<Option<i32>> =
+                chunk.iter().map(|r| to_i32(r.3.considered)).collect();
+            let offers: Vec<Option<i32>> = chunk.iter().map(|r| to_i32(r.3.offers)).collect();
+            sqlx::query(
+                "INSERT INTO school_demand (snapshot_id, dbn, year, district, seats, listed, considered, offers) \
+                 SELECT $1, * FROM UNNEST($2::text[], $3::int4[], $4::text[], $5::int4[], $6::int4[], $7::int4[], $8::int4[])",
+            )
+            .bind(id)
+            .bind(&dbns)
+            .bind(&years)
+            .bind(&districts)
+            .bind(&seats)
+            .bind(&listed)
+            .bind(&considered)
+            .bind(&offers)
+            .execute(&mut *tx)
+            .await
+            .map_err(unavailable)?;
+        }
+        tx.commit().await.map_err(unavailable)
+    }
+
+    async fn latest_demand(&self) -> Result<Option<Stored<DemandHistory>>, RepositoryError> {
+        let Some((id, recorded_at, source)) = latest_header(&self.pool, "demand_snapshots").await?
+        else {
+            return Ok(None);
+        };
+        let rows = sqlx::query(
+            "SELECT dbn, year, district, seats, listed, considered, offers FROM school_demand WHERE snapshot_id = $1 ORDER BY dbn, year, district",
+        )
+        .bind(id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(unavailable)?;
+        let mut history = DemandHistory::new();
+        let mut current: Option<(String, SchoolDemandYear)> = None;
+        for r in rows {
+            let dbn: String = r.try_get("dbn").map_err(unavailable)?;
+            let year: i32 = r.try_get("year").map_err(unavailable)?;
+            let year = u32::try_from(year).map_err(|e| corrupt(id, e))?;
+            let district: String = r.try_get("district").map_err(unavailable)?;
+            let figures = DemandFigures {
+                seats: to_u32(id, r.try_get("seats").map_err(unavailable)?)?,
+                listed: to_u32(id, r.try_get("listed").map_err(unavailable)?)?,
+                considered: to_u32(id, r.try_get("considered").map_err(unavailable)?)?,
+                offers: to_u32(id, r.try_get("offers").map_err(unavailable)?)?,
+            };
+            let same = current
+                .as_ref()
+                .is_some_and(|(d, y)| *d == dbn && y.year == year);
+            if !same {
+                if let Some((d, y)) = current.take() {
+                    history.insert(&d, y);
+                }
+                current = Some((
+                    dbn.clone(),
+                    SchoolDemandYear {
+                        year,
+                        ..SchoolDemandYear::default()
+                    },
+                ));
+            }
+            let (_, entry) = current.as_mut().expect("set above");
+            if district.is_empty() {
+                entry.all = figures;
+            } else {
+                entry.by_residential_district.insert(district, figures);
+            }
+        }
+        if let Some((d, y)) = current.take() {
+            history.insert(&d, y);
+        }
+        Ok(Some(Stored {
+            recorded_at,
+            source,
+            value: history,
         }))
     }
 }

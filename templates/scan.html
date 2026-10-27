@@ -32,20 +32,22 @@
 </form>
 {% if let Some(line) = lottery_line %}<p>{{ line }} {% if !csv_url.is_empty() %}<a href="{{ csv_url }}">Download as a spreadsheet (CSV)</a>{% endif %}</p>{% endif %}
 {% if !rows.is_empty() %}
-<p class="hint">Click a column heading to sort. {{ scores_line }}</p>
+<p class="hint">Click a column heading to sort. "Applicants" are the children MySchools counts as considered for a seat at the program, not everyone who listed it. {{ demand_line }} {{ scores_line }}</p>
 {% include "distance.html" %}
 <table class="sortable">
   <thead>
-    <tr><th>School / program</th><th>District</th><th>Picks by</th><th class="num">Seats</th><th class="num">Applicants</th><th>Your priority group</th><th>Last year, in your group</th><th>Outlook</th><th class="num">ELA</th><th class="num">Math</th><th class="num distance">Distance</th></tr>
+    <tr><th>School / program</th><th>District</th><th>Picks by</th><th class="num">Seats</th><th class="num">Applicants</th><th class="num">Listed the school</th><th class="num">Competed</th><th>Your priority group</th><th>Last year, in your group</th><th>Outlook</th><th class="num">ELA</th><th class="num">Math</th><th class="num distance">Distance</th></tr>
   </thead>
   <tbody>
   {% for r in rows %}
     <tr data-lat="{{ r.lat }}" data-lon="{{ r.lon }}">
-      <td>{{ r.school }}<div class="hint">{{ r.program }} · <code>{{ r.code }}</code></div>{% include "map_links.html" %}</td>
+      <td><a href="{{ r.school_url }}">{{ r.school }}</a><div class="hint">{{ r.program }} · <code>{{ r.code }}</code></div>{% include "map_links.html" %}</td>
       <td data-v="{{ r.district }}">{{ r.district }}</td>
       <td>{{ r.method }}</td>
       <td class="num" data-v="{{ r.seats }}">{{ r.seats }}</td>
       <td class="num" data-v="{{ r.applicants }}">{{ r.applicants }}</td>
+      <td class="num" data-v="{{ r.listed }}">{{ r.listed }}</td>
+      <td class="num" data-v="{{ r.considered }}">{{ r.considered }}</td>
       <td>{{ r.group }}</td>
       <td data-v="{{ r.share_sort }}">{{ r.last_year }}</td>
       <td data-v="{{ r.outlook_sort }}"><span class="badge {{ r.outlook_class }}">{{ r.outlook }}</span></td>

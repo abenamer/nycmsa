@@ -28,6 +28,7 @@ fn app() -> Router {
         bundled.programs,
         bundled.catalog,
         bundled.results,
+        bundled.demand,
         bundled.profiles,
         &limits,
     );
@@ -277,7 +278,7 @@ async fn scan_csv_has_the_python_columns() {
         Some("text/csv; charset=utf-8")
     );
     let csv = body_text(response).await;
-    assert!(csv.starts_with("district,school,code,program,method,seats,applicants,filled,group,group_order,n_groups,your_group_applied,your_group_offered,your_group_share,reach,dbn,scores_year,ela_proficient_pct,math_proficient_pct,latitude,longitude,address\n"));
+    assert!(csv.starts_with("district,school,code,program,method,seats,applicants,filled,group,group_order,n_groups,your_group_applied,your_group_offered,your_group_share,reach,dbn,scores_year,ela_proficient_pct,math_proficient_pct,latitude,longitude,address,school_demand_year,school_listed,school_considered,school_offers\n"));
 }
 
 #[tokio::test]
@@ -371,4 +372,174 @@ async fn programs_pages_list_the_definitions() {
         programs["K062Z"]["type"], "lottery",
         "derived zoned program"
     );
+}
+
+/// The router with a small demand history attached, as `serve` builds it
+/// after `fetch-demand`.
+fn app_with_demand() -> Router {
+    use std::collections::BTreeMap;
+
+    use nycmsa::domain::{DemandFigures, DemandHistory, SchoolDemandYear};
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let bundled = load_bundled(
+        &root.join("data"),
+        &root.join("tests/fixtures/myschools_d15_d20.json"),
+    )
+    .expect("bundled data loads");
+    let mut demand = DemandHistory::new();
+    demand.insert(
+        "15K442",
+        SchoolDemandYear {
+            year: 2024,
+            all: DemandFigures {
+                seats: Some(110),
+                listed: Some(1500),
+                considered: Some(550),
+                offers: Some(130),
+            },
+            by_residential_district: BTreeMap::new(),
+        },
+    );
+    demand.insert(
+        "15K442",
+        SchoolDemandYear {
+            year: 2025,
+            all: DemandFigures {
+                seats: Some(115),
+                listed: Some(1585),
+                considered: Some(564),
+                offers: Some(138),
+            },
+            by_residential_district: [
+                (
+                    "15".to_owned(),
+                    DemandFigures {
+                        seats: None,
+                        listed: Some(900),
+                        considered: Some(400),
+                        offers: Some(100),
+                    },
+                ),
+                (
+                    "13".to_owned(),
+                    DemandFigures {
+                        seats: None,
+                        listed: Some(60),
+                        considered: None,
+                        offers: None,
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        },
+    );
+    let limits = HttpLimits {
+        cpu_permits: 2,
+        ..HttpLimits::default()
+    };
+    let state = build_state(
+        bundled.programs,
+        bundled.catalog,
+        bundled.results,
+        demand,
+        bundled.profiles,
+        &limits,
+    );
+    router(state, &limits)
+}
+
+#[tokio::test]
+async fn school_page_shows_the_demand_history_newest_first() {
+    let response = app_with_demand()
+        .oneshot(get("/schools/15k442"))
+        .await
+        .expect("response");
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "the DBN is matched case-insensitively"
+    );
+    let html = body_text(response).await;
+    assert!(html.contains("<h1>M.S. 442"), "{html}");
+    let first = html.find("data-v=\"2025\"").expect("2025 row");
+    let second = html.find("data-v=\"2024\"").expect("2024 row");
+    assert!(first < second, "newest year first");
+    assert!(html.contains(">1585<"), "families who listed it");
+    assert!(html.contains(">564<"), "families who competed");
+    assert!(
+        html.contains(">24%<"),
+        "138 offers for 564 competing families"
+    );
+    assert!(html.contains(">13.8<"), "listed per seat");
+    assert!(html.contains("Fall 2025, by where the applicants live"));
+    let d15 = html.find("District 15").expect("district 15 row");
+    let d13 = html.find("District 13").expect("district 13 row");
+    assert!(d15 < d13, "most competing families first");
+}
+
+#[tokio::test]
+async fn school_page_without_history_and_unknown_school() {
+    let response = app()
+        .oneshot(get("/schools/15K442"))
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let html = body_text(response).await;
+    assert!(html.contains("No demand history is loaded for this school"));
+    assert!(html.contains("K442S"), "the catalog programs are listed");
+
+    let response = app()
+        .oneshot(get("/schools/99Z999"))
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let response = app()
+        .oneshot(get("/schools/%3Cscript%3E"))
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn scan_and_picker_carry_the_school_demand_columns() {
+    let response = app_with_demand()
+        .oneshot(get("/scan?attr=d15&lottery=b0"))
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let html = body_text(response).await;
+    assert!(html.contains("<th class=\"num\">Listed the school</th>"));
+    assert!(html.contains("data-v=\"1585\">1585<"), "{html}");
+    assert!(html.contains("data-v=\"564\">564<"));
+    assert!(
+        html.contains("href=\"/schools/15K442\""),
+        "the school name links to its page"
+    );
+    assert!(html.contains("fall 2025 figures"));
+
+    let response = app_with_demand()
+        .oneshot(get("/pick"))
+        .await
+        .expect("response");
+    let html = body_text(response).await;
+    assert!(html.contains("data-v=\"1585\">1585<"));
+    assert!(html.contains("href=\"/schools/15K442\""));
+
+    let response = app_with_demand()
+        .oneshot(get("/api/scan?attrs=d15&lottery=b0"))
+        .await
+        .expect("response");
+    let scan: serde_json::Value = serde_json::from_str(&body_text(response).await).expect("json");
+    let row = scan["rows"]
+        .as_array()
+        .expect("rows")
+        .iter()
+        .find(|r| r["dbn"] == "15K442")
+        .expect("an M.S. 442 row");
+    assert_eq!(row["school_demand_year"], 2025);
+    assert_eq!(row["school_listed"], 1585);
+    assert_eq!(row["school_considered"], 564);
+    assert_eq!(row["school_offers"], 138);
 }

@@ -41,6 +41,9 @@ pub enum Command {
     /// Look up every school's detail page on MySchools, classify each
     /// program, and store the profiles in the database.
     FetchProfiles(FetchProfilesArgs),
+    /// Download the DOE's yearly reports on school applications, offers
+    /// and seats (Local Law 72) into the database.
+    FetchDemand(FetchDemandArgs),
     /// Re-run the kind-of-program rules on the stored profiles, without a
     /// download.
     ReclassifyProfiles(FetchProfilesArgs),
@@ -172,6 +175,12 @@ pub struct FetchScoresArgs {
 
 #[derive(Debug, Args)]
 pub struct FetchProfilesArgs {
+    #[command(flatten)]
+    pub database: DatabaseArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct FetchDemandArgs {
     #[command(flatten)]
     pub database: DatabaseArgs,
 }

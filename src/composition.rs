@@ -11,8 +11,8 @@ use tokio::sync::Semaphore;
 
 use crate::adapters::cli::render::{render_report, render_scan};
 use crate::adapters::cli::{
-    scan_request, simulation_request, BootstrapArgs, DatabaseArgs, FetchArgs, FetchProfilesArgs,
-    FetchScoresArgs, ImportArgs, ScanArgs, ScoreSource, ServeArgs, SimArgs,
+    scan_request, simulation_request, BootstrapArgs, DatabaseArgs, FetchArgs, FetchDemandArgs,
+    FetchProfilesArgs, FetchScoresArgs, ImportArgs, ScanArgs, ScoreSource, ServeArgs, SimArgs,
 };
 use crate::adapters::csv_export::scan_rows_csv;
 use crate::adapters::dto::{student_from_dto, InvalidInput};
@@ -21,20 +21,21 @@ use crate::adapters::json_files::{load_program_definitions, load_student, FileLo
 use crate::adapters::myschools::{catalog_from_documents, load_catalog, CatalogLoadError};
 use crate::adapters::myschools_api::{ClientBuildError, DEFAULT_BASE_URL};
 use crate::adapters::postgres::{self, PostgresSetupError};
-use crate::adapters::{infohub, open_data};
+use crate::adapters::{infohub, infohub_demand, open_data};
 
 use crate::adapters::{
-    InfoHubClient, MySchoolsApiClient, NycOpenDataClient, PostgresReferenceData, SystemClock,
+    InfoHubClient, InfoHubDemandClient, MySchoolsApiClient, NycOpenDataClient,
+    PostgresReferenceData, SystemClock,
 };
 use crate::application::{
-    DistrictFilter, DownloadError, ImportSeeds, LoadReferenceData, ReclassifyProfiles,
-    ReferenceError, RefreshCatalog, RefreshProfiles, RefreshTestResults, ScanCatalog,
-    SimulateStudent,
+    DemandStore, DistrictFilter, DownloadError, ImportSeeds, LoadReferenceData, ReclassifyProfiles,
+    ReferenceError, RefreshCatalog, RefreshDemand, RefreshProfiles, RefreshTestResults,
+    ScanCatalog, SimulateStudent,
 };
 use crate::domain::catalog::InvalidDistrictCode;
 use crate::domain::{
-    programs_from_catalog, CatalogProgram, DistrictCode, ProgramDefinitions, ProgramProfile,
-    SimulationError, TestResults,
+    programs_from_catalog, CatalogProgram, DemandHistory, DistrictCode, ProgramDefinitions,
+    ProgramProfile, SimulationError, TestResults,
 };
 
 /// Every failure the binary can report. Each variant keeps its source.
@@ -177,6 +178,33 @@ async fn fetch_scores(
     ))
 }
 
+async fn fetch_demand(reference: PostgresReferenceData) -> Result<String, AppError> {
+    let client = InfoHubDemandClient::new(infohub_demand::SOURCES.to_vec())?;
+    let outcome = RefreshDemand::new(client, reference, SystemClock)
+        .execute(&infohub_demand::sources_description())
+        .await?;
+    for (year, reason) in &outcome.failed_years {
+        tracing::warn!(year, %reason, "demand report not read; that year is missing");
+    }
+    Ok(format!(
+        "stored grade 6 demand for {} schools, {}{}\n",
+        outcome.schools,
+        match (outcome.years.first(), outcome.years.last()) {
+            (Some(first), Some(last)) if first != last => format!("fall {first} to {last}"),
+            (Some(only), _) => format!("fall {only}"),
+            _ => "no years".to_owned(),
+        },
+        if outcome.failed_years.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " ({} years failed, see the log)",
+                outcome.failed_years.len()
+            )
+        }
+    ))
+}
+
 async fn fetch_profiles(reference: PostgresReferenceData) -> Result<String, AppError> {
     let client = MySchoolsApiClient::new(DEFAULT_BASE_URL.to_owned(), Duration::from_millis(250))?;
     let outcome = RefreshProfiles::new(client, reference, SystemClock)
@@ -214,6 +242,12 @@ pub async fn run_reclassify_profiles(args: &FetchProfilesArgs) -> Result<String,
         .execute()
         .await?;
     Ok(format!("reclassified {count} program profiles\n"))
+}
+
+/// `nycmsa fetch-demand`: download the DOE's yearly demand reports.
+pub async fn run_fetch_demand(args: &FetchDemandArgs) -> Result<String, AppError> {
+    let reference = connect(&args.database).await?;
+    fetch_demand(reference).await
 }
 
 /// `nycmsa fetch-profiles`: look up and classify every program.
@@ -279,12 +313,40 @@ pub async fn run_bootstrap(args: &BootstrapArgs) -> Result<String, AppError> {
         report.push_str(&fetch_scores(reference.clone(), args.source).await?);
     }
     if !inventory.profiles {
-        report.push_str(&fetch_profiles(reference).await?);
+        report.push_str(&fetch_profiles(reference.clone()).await?);
+    }
+    if demand_incomplete(&reference).await? {
+        // Supplementary data: a failed download must not keep the site
+        // from starting. The next bootstrap tries again, and a snapshot
+        // that lacks a year is refreshed whole on the next bootstrap too.
+        match fetch_demand(reference).await {
+            Ok(text) => report.push_str(&text),
+            Err(error) => {
+                tracing::warn!(%error, "demand reports not downloaded; the school pages show no history until the next bootstrap");
+                report.push_str("grade 6 demand history not downloaded (see the log)\n");
+            }
+        }
     }
     if report.is_empty() {
         report.push_str("the database already holds every reference set\n");
     }
     Ok(report)
+}
+
+/// True when no demand snapshot exists or the latest one lacks a year
+/// the sources list, so a report that failed once is tried again.
+async fn demand_incomplete(reference: &PostgresReferenceData) -> Result<bool, AppError> {
+    let Some(stored) = reference
+        .latest_demand()
+        .await
+        .map_err(ReferenceError::from)?
+    else {
+        return Ok(true);
+    };
+    let have = stored.value.years();
+    Ok(infohub_demand::SOURCES
+        .iter()
+        .any(|s| !have.contains(&s.year)))
 }
 
 /// The simulation's programs: every catalog program with figures, with the
@@ -316,11 +378,22 @@ pub async fn run_serve(args: &ServeArgs) -> Result<(), AppError> {
             "some catalog programs have no usable coordinates; their distance column stays blank"
         );
     }
+    let demand = data.demand.map(|d| d.value).unwrap_or_default();
+    if demand.is_empty() {
+        tracing::warn!("no demand history loaded; run `nycmsa fetch-demand` to show it");
+    } else {
+        tracing::info!(
+            schools = demand.schools(),
+            years = ?demand.years(),
+            "loaded the grade 6 demand history"
+        );
+    }
     serve_with(
         args,
         programs,
         catalog,
         data.results.value,
+        demand,
         data.profiles.value,
     )
     .await
@@ -331,10 +404,11 @@ async fn serve_with(
     programs: ProgramDefinitions,
     catalog: Vec<CatalogProgram>,
     results: TestResults,
+    demand: DemandHistory,
     profiles: Vec<ProgramProfile>,
 ) -> Result<(), AppError> {
     let limits = HttpLimits::default();
-    let state = build_state(programs, catalog, results, profiles, &limits);
+    let state = build_state(programs, catalog, results, demand, profiles, &limits);
     let app = router(state, &limits);
     let listener = tokio::net::TcpListener::bind(&args.bind)
         .await
@@ -354,13 +428,14 @@ pub fn build_state(
     programs: ProgramDefinitions,
     catalog: Vec<CatalogProgram>,
     results: TestResults,
+    demand: DemandHistory,
     profiles: Vec<ProgramProfile>,
     limits: &HttpLimits,
 ) -> AppState {
     AppState {
         simulate: Arc::new(SimulateStudent::new(programs)),
         profiles: Arc::new(ProfileBook::new(profiles, &catalog)),
-        scan: Arc::new(ScanCatalog::new(catalog, results)),
+        scan: Arc::new(ScanCatalog::new(catalog, results).with_demand(demand)),
         cpu_permits: Arc::new(Semaphore::new(limits.cpu_permits.max(1))),
     }
 }
@@ -380,11 +455,12 @@ pub struct BundledData {
     pub programs: ProgramDefinitions,
     pub catalog: Vec<CatalogProgram>,
     pub results: TestResults,
+    pub demand: DemandHistory,
     pub profiles: Vec<ProgramProfile>,
 }
 
 /// Loads the seed files and a catalog file for tests and local tools, with
-/// no test results. The programs are derived from the catalog with the seed
+/// no test results and no demand history. The programs are derived from the catalog with the seed
 /// programs merged on top, as `serve` does.
 pub fn load_bundled(seed_dir: &Path, catalog_file: &Path) -> Result<BundledData, AppError> {
     let curated = load_program_definitions(&seed_dir.join("programs.json"))?;
@@ -393,6 +469,7 @@ pub fn load_bundled(seed_dir: &Path, catalog_file: &Path) -> Result<BundledData,
         programs: simulation_programs(&catalog, curated)?,
         catalog,
         results: TestResults::new(),
+        demand: DemandHistory::new(),
         profiles: Vec::new(),
     })
 }

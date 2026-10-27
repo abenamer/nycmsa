@@ -11,13 +11,13 @@ use std::time::{Duration, UNIX_EPOCH};
 use nycmsa::adapters::postgres;
 use nycmsa::adapters::PostgresReferenceData;
 use nycmsa::application::{
-    CatalogSnapshot, CatalogStore, ProfileStore, ProgramStore, StudentDefaultsStore,
+    CatalogSnapshot, CatalogStore, DemandStore, ProfileStore, ProgramStore, StudentDefaultsStore,
     TestResultsStore,
 };
 use nycmsa::domain::{
-    Attribute, Evidence, GroupDemand, PriorityGroup, Program, ProgramCode, ProgramDefinitions,
-    ProgramFocus, ProgramProfile, Ranking, SchoolScores, SelectionKind, StandardDeviation, Student,
-    TestResults,
+    Attribute, DemandFigures, DemandHistory, Evidence, GroupDemand, PriorityGroup, Program,
+    ProgramCode, ProgramDefinitions, ProgramFocus, ProgramProfile, Ranking, SchoolDemandYear,
+    SchoolScores, SelectionKind, StandardDeviation, Student, TestResults,
 };
 
 #[tokio::test]
@@ -75,6 +75,64 @@ async fn reference_snapshots_round_trip_and_the_latest_wins() {
         .expect("reads")
         .expect("present");
     assert_eq!(latest.value, results);
+
+    // Demand history: two years, one with district rows and suppressed cells.
+    let mut demand = DemandHistory::new();
+    demand.insert(
+        "15K442",
+        SchoolDemandYear {
+            year: 2019,
+            all: DemandFigures {
+                seats: Some(100),
+                listed: Some(1400),
+                considered: None,
+                offers: Some(120),
+            },
+            by_residential_district: Default::default(),
+        },
+    );
+    demand.insert(
+        "15K442",
+        SchoolDemandYear {
+            year: 2025,
+            all: DemandFigures {
+                seats: Some(115),
+                listed: Some(1585),
+                considered: Some(564),
+                offers: Some(138),
+            },
+            by_residential_district: [
+                (
+                    "15".to_owned(),
+                    DemandFigures {
+                        seats: None,
+                        listed: Some(900),
+                        considered: Some(400),
+                        offers: Some(100),
+                    },
+                ),
+                (
+                    "13".to_owned(),
+                    DemandFigures {
+                        seats: None,
+                        listed: Some(60),
+                        considered: None,
+                        offers: None,
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        },
+    );
+    store.save_demand(&demand, &tag, at).await.expect("saves");
+    let latest = store
+        .latest_demand()
+        .await
+        .expect("reads")
+        .expect("present");
+    assert_eq!(latest.value, demand);
+    assert_eq!(latest.source, tag);
 
     // Programs.
     let programs = ProgramDefinitions::new(vec![Program::new(

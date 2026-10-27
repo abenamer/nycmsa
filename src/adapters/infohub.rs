@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 use std::io::{Read, Seek};
 use std::time::Duration;
 
+use bytes::Bytes;
 use calamine::{Data, Reader, Xlsx};
 
 use crate::application::{DownloadError, TestResultsDownloader, TestResultsSnapshot};
@@ -123,63 +124,78 @@ pub fn parse_workbook<R: Read + Seek>(
     Ok(SubjectResults { year, by_dbn })
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("cannot build the HTTP client: {0}")]
+pub struct ClientBuildError(#[from] reqwest::Error);
+
+/// The HTTP client the workbook downloads share: a ten-minute timeout
+/// for files of 10 to 50 MB on a slow link, and a plain user agent.
+pub(crate) fn workbook_client() -> Result<reqwest::Client, ClientBuildError> {
+    Ok(reqwest::Client::builder()
+        .timeout(Duration::from_secs(600))
+        .user_agent("nycmsa")
+        .build()?)
+}
+
+/// Downloads one workbook and parses it on the blocking pool: a 10 to
+/// 50 MB workbook is CPU work and stays off the executor (REAS-RUST-007).
+/// `parse` returns its error as text, which becomes a [`DownloadError`]
+/// naming the URL.
+pub(crate) async fn fetch_workbook<T, F>(
+    client: &reqwest::Client,
+    url: &str,
+    parse: F,
+) -> Result<T, DownloadError>
+where
+    T: Send + 'static,
+    F: FnOnce(std::io::Cursor<Bytes>) -> Result<T, String> + Send + 'static,
+{
+    let request_failed = |e: reqwest::Error| DownloadError::Request {
+        url: url.to_owned(),
+        reason: e.to_string(),
+    };
+    let bytes = client
+        .get(url)
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(request_failed)?
+        .bytes()
+        .await
+        .map_err(request_failed)?;
+    let parsed = tokio::task::spawn_blocking(move || parse(std::io::Cursor::new(bytes)))
+        .await
+        .map_err(|e| DownloadError::Malformed {
+            url: url.to_owned(),
+            reason: format!("parse task failed: {e}"),
+        })?;
+    parsed.map_err(|reason| DownloadError::Malformed {
+        url: url.to_owned(),
+        reason,
+    })
+}
+
 pub struct InfoHubClient {
     client: reqwest::Client,
     ela_url: String,
     math_url: String,
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("cannot build the HTTP client: {0}")]
-pub struct ClientBuildError(#[from] reqwest::Error);
-
 impl InfoHubClient {
     pub fn new(ela_url: String, math_url: String) -> Result<Self, ClientBuildError> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(600))
-            .user_agent("nycmsa")
-            .build()?;
         Ok(Self {
-            client,
+            client: workbook_client()?,
             ela_url,
             math_url,
         })
     }
 
     async fn workbook(&self, url: &str, sheet: &str) -> Result<SubjectResults, DownloadError> {
-        let bytes = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .and_then(reqwest::Response::error_for_status)
-            .map_err(|e| DownloadError::Request {
-                url: url.to_owned(),
-                reason: e.to_string(),
-            })?
-            .bytes()
-            .await
-            .map_err(|e| DownloadError::Request {
-                url: url.to_owned(),
-                reason: e.to_string(),
-            })?;
-        // Parsing a 50 MB workbook is CPU work; keep it off the executor
-        // (REAS-RUST-007).
         let sheet = sheet.to_owned();
-        let url_owned = url.to_owned();
-        tokio::task::spawn_blocking(move || {
-            parse_workbook(std::io::Cursor::new(bytes), &sheet).map_err(|e| {
-                DownloadError::Malformed {
-                    url: url_owned,
-                    reason: e.to_string(),
-                }
-            })
+        fetch_workbook(&self.client, url, move |bytes| {
+            parse_workbook(bytes, &sheet).map_err(|e| e.to_string())
         })
         .await
-        .map_err(|e| DownloadError::Malformed {
-            url: url.to_owned(),
-            reason: format!("parse task failed: {e}"),
-        })?
     }
 }
 
