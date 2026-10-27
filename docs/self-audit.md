@@ -227,6 +227,22 @@ The visitor's home never goes into a link. The scan JSON and CSV carry
 | Code review on pull request 9 | Seven findings, all applied: the state-and-ZIP rule keys on the part's shape and a repeated tail is kept once (one catalog address had one); doc comments on the right functions; `rel="noopener noreferrer"` on the links; a unit test for the address-text fallback; one `map_links.html` include instead of two copies; the fixture test binds the program once and asserts the exact address; `with_address` borrows. |
 | Security review on pull request 9 | No findings. Checked: the address reaches the page only through askama's escaping and the link hosts are constants, so no attribute break-out, scheme injection or redirect; the default referrer policy sends only the origin to Google, and `noreferrer` now sends nothing; the CSV's free-text columns predate this change and come from the DOE; nothing reads the stored home. |
 
+## Local evidence: 2026-10-27 (cloud-init on Debian)
+
+Same environment. The first real Droplet was created with Debian 13
+rather than Ubuntu 24.04; cloud-init ran its firewall steps and then
+failed at Docker's repository, which the file named for Ubuntu with the
+host's codename. The file now takes the distribution id and codename
+from `/etc/os-release`, so either system gets the right repository.
+
+| Check | Outcome |
+| --- | --- |
+| `deploy/cloud-init.yaml` | Parses as YAML; the repository line expands to `https://download.docker.com/linux/debian trixie stable` on a Debian 13 `/etc/os-release` and `.../linux/ubuntu noble stable` on an Ubuntu 24.04 one (checked with a shell on sample files) |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+| The Droplet itself | Not re-run from this environment, which cannot reach it; the owner finishes the install over SSH with the same commands, recorded in the operations doc |
+| Code review on pull request 10 (low) | No findings |
+| Security review on pull request 10 | No findings. Checked: both new lines source the root-owned `/etc/os-release` that the vendor image ships, before any user or service can write to the disk; `$ID` expands inside a quoted URL path on `download.docker.com` over TLS, so it cannot change the host the key comes from; the apt line stays bound to that host and to `signed-by=docker.asc` |
+
 ## Local evidence: 2026-10-27 (home page heading)
 
 Same environment, revision on branch `claude/home-heading` over `main`

@@ -1,5 +1,6 @@
 #cloud-config
-# Paste this as "User data" when creating an Ubuntu 24.04 Droplet. It
+# Paste this as "User data" when creating an Ubuntu 24.04 or Debian 13
+# Droplet; Docker's repository is chosen from /etc/os-release. It
 # installs Docker, opens only SSH, HTTP and HTTPS, downloads the
 # deployment files from the main branch, generates a database password,
 # starts the stack, and schedules the daily backup and image update.
@@ -36,9 +37,9 @@ runcmd:
   - ufw --force enable
   # Docker from the official repository.
   - install -m 0755 -d /etc/apt/keyrings
-  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - sh -c 'curl -fsSL "https://download.docker.com/linux/$(. /etc/os-release && echo "$ID")/gpg" -o /etc/apt/keyrings/docker.asc'
   - chmod a+r /etc/apt/keyrings/docker.asc
-  - sh -c 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list'
+  - sh -c '. /etc/os-release && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$ID $VERSION_CODENAME stable" > /etc/apt/sources.list.d/docker.list'
   # The lock timeout waits out unattended-upgrades on first boot.
   - apt-get -o DPkg::Lock::Timeout=600 update
   - apt-get -o DPkg::Lock::Timeout=600 install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
