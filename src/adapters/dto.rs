@@ -485,7 +485,6 @@ pub fn report_to_dto(report: &Report) -> ReportDto {
     }
 }
 
-/// Seconds since the Unix epoch; a time before the epoch reads as zero.
 pub fn scan_row_to_dto(row: &ScanRow) -> ScanRowDto {
     ScanRowDto {
         district: row.district.as_str().to_owned(),

@@ -229,7 +229,9 @@ pub struct ReferenceData {
     pub catalog: Stored<CatalogSnapshot>,
     pub results: Stored<TestResults>,
     pub programs: Stored<ProgramDefinitions>,
-    pub student: Stored<Student>,
+    /// The seed student of the file-based `sim` command. The web server
+    /// does not read it (ADR 0005), so it may be absent.
+    pub student: Option<Stored<Student>>,
     pub profiles: Stored<Vec<ProgramProfile>>,
 }
 
@@ -244,7 +246,7 @@ impl fmt::Display for ReferenceData {
             self.results.source,
             self.programs.value.len(),
             self.programs.source,
-            self.student.source,
+            self.student.as_ref().map_or("none", |s| s.source.as_str()),
             self.profiles.value.len(),
             self.profiles.source
         )
@@ -301,11 +303,7 @@ where
                 .latest_programs()
                 .await?
                 .ok_or(ReferenceError::Missing("program definitions"))?,
-            student: self
-                .store
-                .latest_student_defaults()
-                .await?
-                .ok_or(ReferenceError::Missing("student defaults"))?,
+            student: self.store.latest_student_defaults().await?,
             profiles: self
                 .store
                 .latest_profiles()

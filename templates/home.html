@@ -148,6 +148,16 @@
   var RESULTS = 'nycmsa.results';
   function results() { var r = load(RESULTS); return Array.isArray(r) ? r : []; }
   function showAgain(answers) {
+    // The form's memory follows the result being shown again.
+    var data = {};
+    Object.keys(answers).forEach(function (key) {
+      if (key === 'ranking') return;
+      if (key === 'attributes') data.attribute = Array.isArray(answers[key]) ? answers[key] : [];
+      else if (key === 'talent_test' || key === 'waitlist' || key === 'outlook') data[key] = [answers[key]];
+      else data[key] = answers[key];
+    });
+    save(KEY, data);
+    save(RKEY, String(answers.ranking || '').split(/[\s,]+/).filter(function (c) { return c; }));
     var f = document.createElement('form');
     f.method = 'post'; f.action = '/simulate';
     Object.keys(answers).forEach(function (key) {
@@ -167,7 +177,7 @@
     document.getElementById('results-empty').hidden = list.length > 0;
     table.hidden = list.length === 0;
     document.getElementById('forget-results').hidden = list.length === 0;
-    list.forEach(function (r, i) {
+    list.forEach(function (r) {
       var tr = document.createElement('tr');
       [new Date(r.at).toLocaleString(), r.programs, r.lottery, r.chance].forEach(function (text, j) {
         var td = document.createElement('td'); td.textContent = text; if (j === 3) td.className = 'num'; tr.appendChild(td);
@@ -176,7 +186,7 @@
       var again = document.createElement('button'); again.type = 'button'; again.className = 'secondary'; again.textContent = 'Show again';
       again.onclick = function () { showAgain(r.answers || {}); };
       var x = document.createElement('button'); x.type = 'button'; x.className = 'x'; x.title = 'Forget this result'; x.textContent = '×';
-      x.onclick = function () { var l = results(); l.splice(i, 1); save(RESULTS, l); renderResults(); };
+      x.onclick = function () { save(RESULTS, results().filter(function (e) { return e.at !== r.at; })); renderResults(); };
       td.appendChild(again); td.appendChild(x); tr.appendChild(td);
       body.appendChild(tr);
     });

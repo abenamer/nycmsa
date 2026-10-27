@@ -33,7 +33,7 @@ REAS-ARCH-003 asks four questions before the architecture is selected:
 
 Use ports and adapters with one composition root per executable.
 Declare ports where a second implementation or a test double exists or is
-expected: `RunRepository`, `Clock`, `CatalogDownloader`. Do not declare a
+expected: `CatalogStore`, `Clock`, `CatalogDownloader`. Do not declare a
 port for the catalog file loader or the program definitions loader: each
 has one source, and the use cases take the loaded values directly.
 

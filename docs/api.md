@@ -25,6 +25,11 @@ endpoint that lists or replays earlier requests.
 | Concurrent simulations | one per CPU | `HttpLimits::cpu_permits` |
 | Trials per run | 5,000,000 | `domain::simulation::MAX_TRIALS` |
 
+There is no per-client rate limit. The semaphore and the timeout bound
+what one request costs, not how many requests one client sends; a busy
+client can keep every CPU permit and make other visitors wait. A public
+deployment that needs fairness puts the limit in the proxy in front.
+
 ## Endpoints
 
 | Method and path | Purpose | Success | Errors |

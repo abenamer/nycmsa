@@ -228,6 +228,20 @@ async fn scan_page_opens_blank_without_a_query() {
         "no lottery prefix prefilled: {html}"
     );
     assert!(!html.contains("K448S"), "no rows without a query");
+    let response = app()
+        .oneshot(get("/scan?attr=d15"))
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let html = body_text(response).await;
+    assert!(
+        html.contains("value=\"d15\" checked"),
+        "the chip stays chosen"
+    );
+    assert!(
+        !html.contains("K448S") && !html.contains("Lottery number starting"),
+        "no prefix is substituted: {html}"
+    );
 }
 
 #[tokio::test]

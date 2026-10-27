@@ -454,15 +454,27 @@ impl ScanQuery {
         }
     }
 
+    /// The JSON and CSV endpoints: the Python scanner's defaults fill in
+    /// whatever the query leaves out, including the lottery prefix.
     pub fn from_raw(raw: Option<&str>) -> Self {
-        let Some(raw) = raw.filter(|r| !r.trim().is_empty()) else {
-            return Self::default();
-        };
-        let mut query = Self {
-            attributes: vec![],
-            frl: false,
-            lottery: String::new(),
-        };
+        match raw.filter(|r| !r.trim().is_empty()) {
+            None => Self::default(),
+            Some(raw) => Self::parse(raw, Some("BD")),
+        }
+    }
+
+    /// The HTML page: nothing is filled in for the visitor. Without a
+    /// query string the questions are blank; with one, a missing lottery
+    /// prefix stays missing and the page shows no result.
+    pub fn for_page(raw: Option<&str>) -> Self {
+        match raw.filter(|r| !r.trim().is_empty()) {
+            None => Self::blank(),
+            Some(raw) => Self::parse(raw, None),
+        }
+    }
+
+    fn parse(raw: &str, lottery_fallback: Option<&str>) -> Self {
+        let mut query = Self::blank();
         let mut lottery_given = false;
         for (key, value) in pairs(raw.as_bytes()) {
             match key.as_str() {
@@ -479,7 +491,9 @@ impl ScanQuery {
             }
         }
         if !lottery_given {
-            query.lottery = "BD".to_owned();
+            if let Some(fallback) = lottery_fallback {
+                query.lottery = fallback.to_owned();
+            }
         }
         query
     }
@@ -493,54 +507,42 @@ impl ScanQuery {
     }
 }
 
-/// Without a query string the page shows blank questions and no result:
-/// the server prefills no lottery prefix.
+/// The server prefills no lottery prefix: without one the page shows the
+/// questions and no result. A bad prefix shows the message, status 422.
 async fn scan_page(
     State(state): State<AppState>,
     RawQuery(raw): RawQuery,
 ) -> Result<Response, HttpError> {
-    let districts = state.scan.districts();
-    let Some(raw) = raw.filter(|r| !r.trim().is_empty()) else {
-        let template = ScanPage::new(
-            &ScanQuery::blank(),
-            None,
-            &districts,
-            state.scan.program_count(),
-            state.scan.schools_with_scores(),
-            state.scan.scores_year(),
-            None,
-        );
-        return Ok(page(&template)?.into_response());
+    let query = ScanQuery::for_page(raw.as_deref());
+    let (computed, error) = if query.lottery.trim().is_empty() {
+        (None, None)
+    } else {
+        match query.to_request() {
+            Ok(request) => {
+                let rows = state.scan.execute(&request);
+                (Some((request, rows)), None)
+            }
+            Err(error @ (HttpError::Invalid(_) | HttpError::Form(_))) => {
+                (None, Some(error.to_string()))
+            }
+            Err(other) => return Err(other),
+        }
     };
-    let query = ScanQuery::from_raw(Some(&raw));
-    match query.to_request() {
-        Ok(request) => {
-            let rows = state.scan.execute(&request);
-            let template = ScanPage::new(
-                &query,
-                Some((&request, &rows)),
-                &districts,
-                state.scan.program_count(),
-                state.scan.schools_with_scores(),
-                state.scan.scores_year(),
-                None,
-            );
-            Ok(page(&template)?.into_response())
-        }
-        Err(error @ (HttpError::Invalid(_) | HttpError::Form(_))) => {
-            let template = ScanPage::new(
-                &query,
-                None,
-                &districts,
-                state.scan.program_count(),
-                state.scan.schools_with_scores(),
-                state.scan.scores_year(),
-                Some(error.to_string()),
-            );
-            Ok((StatusCode::UNPROCESSABLE_ENTITY, page(&template)?).into_response())
-        }
-        Err(other) => Err(other),
-    }
+    let status = if error.is_some() {
+        StatusCode::UNPROCESSABLE_ENTITY
+    } else {
+        StatusCode::OK
+    };
+    let template = ScanPage::new(
+        &query,
+        computed.as_ref().map(|(r, rows)| (r, rows.as_slice())),
+        &state.scan.districts(),
+        state.scan.program_count(),
+        state.scan.schools_with_scores(),
+        state.scan.scores_year(),
+        error,
+    );
+    Ok((status, page(&template)?).into_response())
 }
 
 async fn scan_json(
@@ -712,7 +714,14 @@ mod tests {
         assert!(request.frl);
         assert_eq!(request.lottery.as_str(), "b0");
         let no_lottery = ScanQuery::from_raw(Some("attr=d15"));
-        assert_eq!(no_lottery.lottery, "BD");
+        assert_eq!(
+            no_lottery.lottery, "BD",
+            "the API keeps the scanner default"
+        );
+        let page = ScanQuery::for_page(Some("attr=d15"));
+        assert_eq!(page.lottery, "", "the page prefills nothing");
+        assert_eq!(page.attributes, vec!["d15"]);
+        assert_eq!(ScanQuery::for_page(None).attributes.len(), 0);
         let blank = ScanQuery::from_raw(Some("attr=d15&lottery="));
         assert!(blank.to_request().is_err());
     }
