@@ -21,6 +21,9 @@ typed errors, and an OKF documentation bundle in [`docs/`](docs/index.md).
   0.4%).
 - How high your child will place on a screened test: don't know, or a
   quarter of the field.
+- Optionally, where you live, to sort the program lists by straight-line
+  distance. The browser geocodes the address with the city's GeoSearch
+  service and keeps only the coordinates; the server never sees it.
 - Which school district you live in (any of the 32), free or reduced-price
   lunch, and the programs where a sibling, zone, or continuing-student
   priority applies.

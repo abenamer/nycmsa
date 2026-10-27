@@ -21,6 +21,9 @@
   h2 { font-size: 1.15rem; margin: 1.6rem 0 .5rem; }
   p.muted, .muted { color: var(--muted); }
   .lead { font-size: 1.25rem; margin: .2rem 0 .6rem; }
+  .home-box { margin: .8rem 0; }
+  .home-box .home-row { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
+  .home-box input[type=text] { flex: 1 1 18rem; }
   .notice { background: var(--soft); border-left: 4px solid var(--accent); padding: .5rem .8rem; border-radius: 6px; margin: .6rem 0 1rem; }
   fieldset { border: 0; padding: 0; margin: 0 0 1.2rem; }
   legend { font-weight: 600; padding: 0; margin-bottom: .35rem; }
@@ -100,7 +103,7 @@
 </main>
 <footer>
   <p><strong>About this site.</strong> This is not a NYC Department of Education website and has no connection to the DOE or MySchools. A parent with a child applying to middle school built it for his own family, then realized other families could use it. Nothing here is official; check everything against MySchools. The code is public at <a href="https://github.com/abenamer/nycmsa">github.com/abenamer/nycmsa</a>.</p>
-  <p><strong>Your privacy.</strong> Your answers, your program list, and your results are kept only in this browser (local storage, not cookies), so you can come back to them. The server works out your chances and keeps nothing you typed. There are no accounts, no cookies, no visitor statistics, and no third-party scripts. <button type="button" id="forget-all" class="link">Forget everything this browser remembers</button></p>
+  <p><strong>Your privacy.</strong> Your answers, your program list, and your results are kept only in this browser (local storage, not cookies), so you can come back to them. The server works out your chances and keeps nothing you typed. If you type an address to sort schools by distance, your browser sends it straight to the city's GeoSearch service and keeps only the coordinates; this site's server never sees it. There are no accounts, no cookies, no visitor statistics, and no third-party scripts. <button type="button" id="forget-all" class="link">Forget everything this browser remembers</button></p>
 </footer>
 <script>
 document.getElementById('forget-all').onclick = function () {

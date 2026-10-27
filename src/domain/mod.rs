@@ -13,7 +13,7 @@ pub use catalog::{
 };
 pub use catalog::{
     Borough, CatalogGroup, CatalogProgram, DemandPair, DistrictCode, Evidence, FocusScore,
-    GroupDemandText, PriorityCriterion, ProfileText, ProgramFocus, ProgramProfile, Reach,
+    GeoPoint, GroupDemandText, PriorityCriterion, ProfileText, ProgramFocus, ProgramProfile, Reach,
     ScanRequest, ScanRow, SchoolScores, SubjectResults, TestResults, TAG_THRESHOLD,
 };
 pub use lottery::{InvalidLotteryPrefix, InvalidUnitInterval, LotteryPrefix, UnitInterval};

@@ -1,0 +1,60 @@
+<form id="home-form" class="home-box">
+  <label for="home-address">Where do you live? <span class="hint">Optional: sorts the table by distance.</span></label>
+  <div class="home-row">
+    <input type="text" id="home-address" placeholder="for example 610 Henry Street, Brooklyn" autocomplete="off">
+    <button type="submit" class="secondary">Find</button>
+    <button type="button" id="home-forget" class="secondary" hidden>Forget</button>
+  </div>
+  <div class="hint" id="home-status"></div>
+  <div class="hint">Your browser sends the address to the city's GeoSearch service (NYC Department of City Planning) and keeps only the coordinates, in this browser. This site's server never sees the address. Distances are straight lines, not travel times.</div>
+</form>
+<script>
+(function () {
+  var KEY = 'nycmsa.home';
+  var form = document.getElementById('home-form'), input = document.getElementById('home-address');
+  var status = document.getElementById('home-status'), forget = document.getElementById('home-forget');
+  function load() {
+    var h; try { h = JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; }
+    if (!h || typeof h.label !== 'string' || !isFinite(h.lat) || !isFinite(h.lon)) return null;
+    return h;
+  }
+  function save(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch (e) {} }
+  function miles(lat1, lon1, lat2, lon2) {
+    var R = 3958.8, rad = Math.PI / 180, dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+  function fill(home) {
+    Array.prototype.forEach.call(document.querySelectorAll('table.sortable tbody tr'), function (tr) {
+      var cell = tr.querySelector('td.distance'); if (!cell) return;
+      var lat = parseFloat(tr.dataset.lat), lon = parseFloat(tr.dataset.lon);
+      if (!home || isNaN(lat) || isNaN(lon)) { cell.textContent = ''; cell.setAttribute('data-v', ''); return; }
+      var d = miles(home.lat, home.lon, lat, lon);
+      cell.textContent = d.toFixed(1) + ' mi'; cell.setAttribute('data-v', d.toFixed(3));
+    });
+    status.textContent = home ? 'Distances from ' + home.label + '.' : '';
+    forget.hidden = !home;
+    if (home) input.value = home.label;
+  }
+  function sortByDistance() {
+    var th = document.querySelector('table.sortable th.distance');
+    if (th) { th.removeAttribute('data-dir'); th.click(); }
+  }
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var q = input.value.trim(); if (!q) return;
+    status.textContent = 'Looking up the address…';
+    fetch('https://geosearch.planninglabs.nyc/v2/search?size=1&text=' + encodeURIComponent(q))
+      .then(function (r) { if (!r.ok) { throw new Error('status ' + r.status); } return r.json(); })
+      .then(function (j) {
+        var f = j.features && j.features[0];
+        if (!f || !f.geometry) { status.textContent = 'Address not found. Add the borough or ZIP code and try again.'; return; }
+        var home = { label: (f.properties && f.properties.label) || q, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] };
+        save(home); fill(home); sortByDistance();
+      })
+      .catch(function () { status.textContent = 'The address lookup did not answer. Try again later.'; });
+  });
+  forget.onclick = function () { try { localStorage.removeItem(KEY); } catch (e) {} input.value = ''; fill(null); };
+  document.addEventListener('DOMContentLoaded', function () { var home = load(); fill(home); if (home) { sortByDistance(); } });
+})();
+</script>

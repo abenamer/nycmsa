@@ -224,6 +224,10 @@ pub struct PickRow {
     pub applicants: String,
     pub ela: ScoreCell,
     pub math: ScoreCell,
+    /// The school's coordinates for the browser's distance column; empty
+    /// when the catalog has none.
+    pub lat: String,
+    pub lon: String,
 }
 
 #[derive(Template)]
@@ -266,6 +270,8 @@ impl PickerPage {
                     applicants: opt(p.applicants),
                     ela: ScoreCell::new(scores.and_then(|s| s.ela_proficient_pct)),
                     math: ScoreCell::new(scores.and_then(|s| s.math_proficient_pct)),
+                    lat: coordinate(p.location.map(|l| l.latitude)),
+                    lon: coordinate(p.location.map(|l| l.longitude)),
                 })
             })
             .collect();
@@ -648,6 +654,13 @@ pub struct ScanRowView {
     pub outlook_sort: u8,
     pub ela: ScoreCell,
     pub math: ScoreCell,
+    pub lat: String,
+    pub lon: String,
+}
+
+/// A coordinate as the template prints it, or empty when unknown.
+fn coordinate(value: Option<f64>) -> String {
+    value.map(|v| format!("{v:.6}")).unwrap_or_default()
 }
 
 fn outlook(reach: Reach) -> (&'static str, &'static str, u8) {
@@ -794,6 +807,8 @@ impl ScanPage {
             outlook_sort,
             ela: ScoreCell::new(r.scores.and_then(|s| s.ela_proficient_pct)),
             math: ScoreCell::new(r.scores.and_then(|s| s.math_proficient_pct)),
+            lat: coordinate(r.location.map(|l| l.latitude)),
+            lon: coordinate(r.location.map(|l| l.longitude)),
         }
     }
 }
