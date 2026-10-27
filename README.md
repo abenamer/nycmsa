@@ -1,6 +1,9 @@
 # nycmsa — NYC middle school admissions Monte Carlo
 
-A Rust port of [nyc-ms-admissions-sim](https://github.com/abenamer/nyc-ms-admissions-sim)
+Not a NYC Department of Education website: a parent with a child
+applying to middle school built this for his own family and opened it to
+others. A Rust port of
+[nyc-ms-admissions-sim](https://github.com/abenamer/nyc-ms-admissions-sim)
 with a web interface. It estimates one student's chances across a ranked
 list of NYC middle school programs from last year's MySchools "Seats and
 Demand" figures, and scans the MySchools catalog for every program the
