@@ -240,6 +240,8 @@ from `/etc/os-release`, so either system gets the right repository.
 | `deploy/cloud-init.yaml` | Parses as YAML; the repository line expands to `https://download.docker.com/linux/debian trixie stable` on a Debian 13 `/etc/os-release` and `.../linux/ubuntu noble stable` on an Ubuntu 24.04 one (checked with a shell on sample files) |
 | `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
 | The Droplet itself | Not re-run from this environment, which cannot reach it; the owner finishes the install over SSH with the same commands, recorded in the operations doc |
+| Code review on pull request 10 (low) | No findings |
+| Security review on pull request 10 | No findings. Checked: both new lines source the root-owned `/etc/os-release` that the vendor image ships, before any user or service can write to the disk; `$ID` expands inside a quoted URL path on `download.docker.com` over TLS, so it cannot change the host the key comes from; the apt line stays bound to that host and to `signed-by=docker.asc` |
 
 ## Remote evidence
 
