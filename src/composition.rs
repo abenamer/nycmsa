@@ -12,24 +12,31 @@ use tokio::sync::Semaphore;
 
 use crate::adapters::cli::render::{render_report, render_scan};
 use crate::adapters::cli::{
-    scan_request, simulation_request, FetchArgs, ScanArgs, ServeArgs, SimArgs,
+    scan_request, simulation_request, BootstrapArgs, DatabaseArgs, FetchArgs, FetchScoresArgs,
+    ImportArgs, ScanArgs, ServeArgs, SimArgs,
 };
 use crate::adapters::csv_export::scan_rows_csv;
-use crate::adapters::dto::{run_to_dto, InvalidInput, StudentDto};
+use crate::adapters::dto::{student_from_dto, student_to_dto, InvalidInput, StudentDto};
 use crate::adapters::http::{router, AppState, HttpLimits};
 use crate::adapters::json_files::{load_program_definitions, load_student, FileLoadError};
-use crate::adapters::myschools::{load_catalog, CatalogLoadError};
+use crate::adapters::myschools::{catalog_from_documents, load_catalog, CatalogLoadError};
 use crate::adapters::myschools_api::{ClientBuildError, DEFAULT_BASE_URL};
+use crate::adapters::open_data;
 use crate::adapters::postgres_runs::PostgresSetupError;
+
 use crate::adapters::{
-    InMemoryRunRepository, MySchoolsApiClient, PostgresRunRepository, SystemClock,
+    InMemoryRunRepository, MySchoolsApiClient, NycOpenDataClient, PostgresReferenceData,
+    PostgresRunRepository, SystemClock,
 };
 use crate::application::{
-    Clock, DistrictFilter, DownloadCatalog, DownloadError, RunQueries, RunRepository, ScanCatalog,
-    SimulateStudent,
+    Clock, DistrictFilter, DownloadError, ImportSeeds, LoadReferenceData, ReferenceError,
+    RefreshCatalog, RefreshTestResults, RunQueries, RunRepository, ScanCatalog, SimulateStudent,
 };
 use crate::domain::catalog::InvalidDistrictCode;
-use crate::domain::{DistrictCode, SimulationError};
+use crate::domain::{
+    programs_from_catalog, CatalogProgram, DistrictCode, ProgramDefinitions, SimulationError,
+    TestResults,
+};
 
 /// Every failure the binary can report. Each variant keeps its source.
 #[derive(Debug, thiserror::Error)]
@@ -39,6 +46,8 @@ pub enum AppError {
     #[error(transparent)]
     Catalog(#[from] CatalogLoadError),
     #[error(transparent)]
+    Reference(#[from] ReferenceError),
+    #[error(transparent)]
     Invalid(#[from] InvalidInput),
     #[error(transparent)]
     Simulation(#[from] SimulationError),
@@ -46,6 +55,8 @@ pub enum AppError {
     Download(#[from] DownloadError),
     #[error(transparent)]
     Client(#[from] ClientBuildError),
+    #[error(transparent)]
+    OpenDataClient(#[from] open_data::ClientBuildError),
     #[error(transparent)]
     Postgres(#[from] PostgresSetupError),
     #[error("cannot write CSV: {0}")]
@@ -68,8 +79,6 @@ pub enum AppError {
     Server(#[source] std::io::Error),
     #[error("cannot start the async runtime: {0}")]
     Runtime(#[source] std::io::Error),
-    #[error("--max-runs must be at least 1")]
-    ZeroMaxRuns,
     #[error("--districts: {0}")]
     Districts(#[from] InvalidDistrictCode),
 }
@@ -95,10 +104,11 @@ pub fn run_sim(args: &SimArgs) -> Result<String, AppError> {
     Ok(render_report(&request.student, &report))
 }
 
-/// `nycmsa scan`: load the catalog, scan, render, and optionally write CSV.
+/// `nycmsa scan`: load a catalog file, scan, render, and optionally write
+/// CSV. The CLI scan shows no test scores; the web page does.
 pub fn run_scan(args: &ScanArgs) -> Result<String, AppError> {
     let catalog = load_catalog(&args.data)?;
-    let use_case = ScanCatalog::new(catalog);
+    let use_case = ScanCatalog::new(catalog, TestResults::new());
     let request = scan_request(args)?;
     let rows = use_case.execute(&request);
     let mut text = render_scan(&request, &rows);
@@ -124,54 +134,136 @@ fn district_filter(raw: &str) -> Result<DistrictFilter, AppError> {
     Ok(DistrictFilter::Only(codes))
 }
 
-/// `nycmsa fetch`: download the catalog and write it verbatim.
-pub async fn run_fetch(args: &FetchArgs) -> Result<String, AppError> {
-    let filter = district_filter(&args.districts)?;
+/// Opens the database, applies migrations, and returns the two adapters
+/// that share its pool.
+async fn connect(
+    database: &DatabaseArgs,
+) -> Result<(PostgresRunRepository, PostgresReferenceData), AppError> {
+    let runs = PostgresRunRepository::connect(&database.database_url, 5).await?;
+    runs.migrate().await?;
+    let reference = PostgresReferenceData::new(runs.pool().clone());
+    Ok((runs, reference))
+}
+
+async fn fetch_catalog(
+    reference: PostgresReferenceData,
+    districts: &str,
+) -> Result<String, AppError> {
+    let filter = district_filter(districts)?;
     let client = MySchoolsApiClient::new(DEFAULT_BASE_URL.to_owned(), Duration::from_millis(500))?;
-    let use_case = DownloadCatalog::new(client);
-    let snapshot = use_case.execute(&filter).await?;
-    let text = serde_json::to_string(&snapshot.schools)?;
-    std::fs::write(&args.out, text).map_err(|source| AppError::Write {
-        path: args.out.display().to_string(),
-        source,
-    })?;
+    let count = RefreshCatalog::new(client, reference, SystemClock)
+        .execute(
+            &filter,
+            &format!("MySchools API {DEFAULT_BASE_URL} ({districts})"),
+        )
+        .await?;
+    Ok(format!("stored a catalog snapshot of {count} schools\n"))
+}
+
+async fn fetch_scores(reference: PostgresReferenceData) -> Result<String, AppError> {
+    let client = NycOpenDataClient::new(open_data::DEFAULT_BASE_URL.to_owned())?;
+    let (count, source) = RefreshTestResults::new(client, reference, SystemClock)
+        .execute()
+        .await?;
     Ok(format!(
-        "wrote {} schools to {}\n",
-        snapshot.len(),
-        args.out.display()
+        "stored test results for {count} schools from {source}\n"
     ))
 }
 
-/// `nycmsa serve`: select the run store, build the use cases, and serve.
+async fn import_seeds(
+    reference: PostgresReferenceData,
+    programs: &Path,
+    student: &Path,
+) -> Result<String, AppError> {
+    let definitions = load_program_definitions(programs)?;
+    let defaults = student_from_dto(load_student(student)?)?;
+    ImportSeeds::new(reference, SystemClock)
+        .execute(
+            &definitions,
+            &programs.display().to_string(),
+            &defaults,
+            &student.display().to_string(),
+        )
+        .await?;
+    Ok(format!(
+        "stored {} hand-entered programs and the form defaults\n",
+        definitions.len()
+    ))
+}
+
+/// `nycmsa fetch`: download the catalog into the database.
+pub async fn run_fetch(args: &FetchArgs) -> Result<String, AppError> {
+    let (_, reference) = connect(&args.database).await?;
+    fetch_catalog(reference, &args.districts).await
+}
+
+/// `nycmsa fetch-scores`: download the test results into the database.
+pub async fn run_fetch_scores(args: &FetchScoresArgs) -> Result<String, AppError> {
+    let (_, reference) = connect(&args.database).await?;
+    fetch_scores(reference).await
+}
+
+/// `nycmsa import`: store the seed files.
+pub async fn run_import(args: &ImportArgs) -> Result<String, AppError> {
+    let (_, reference) = connect(&args.database).await?;
+    import_seeds(reference, &args.programs, &args.student).await
+}
+
+/// `nycmsa bootstrap`: import the seeds and download whatever is missing,
+/// so a fresh database can serve.
+pub async fn run_bootstrap(args: &BootstrapArgs) -> Result<String, AppError> {
+    let (_, reference) = connect(&args.database).await?;
+    let inventory = LoadReferenceData::new(reference.clone())
+        .inventory()
+        .await?;
+    let mut report = String::new();
+    if !(inventory.programs && inventory.student) {
+        report.push_str(&import_seeds(reference.clone(), &args.programs, &args.student).await?);
+    }
+    if !inventory.catalog {
+        report.push_str(&fetch_catalog(reference.clone(), &args.districts).await?);
+    }
+    if !inventory.results {
+        report.push_str(&fetch_scores(reference).await?);
+    }
+    if report.is_empty() {
+        report.push_str("the database already holds every reference set\n");
+    }
+    Ok(report)
+}
+
+/// The simulation's programs: every catalog program with figures, with the
+/// hand-entered entries replacing the codes they cover.
+pub fn simulation_programs(
+    catalog: &[CatalogProgram],
+    curated: ProgramDefinitions,
+) -> Result<ProgramDefinitions, AppError> {
+    let derived =
+        ProgramDefinitions::new(programs_from_catalog(catalog)).map_err(InvalidInput::from)?;
+    Ok(derived.merged_with(curated))
+}
+
+/// `nycmsa serve`: read the latest reference snapshots and serve.
 pub async fn run_serve(args: &ServeArgs) -> Result<(), AppError> {
-    let programs = load_program_definitions(&args.programs)?;
-    let student = load_student(&args.student)?;
-    let catalog = load_catalog(&args.catalog)?;
+    let (runs, reference) = connect(&args.database).await?;
+    let data = LoadReferenceData::new(reference).execute().await?;
+    tracing::info!(%data, "loaded reference data");
+    let catalog = catalog_from_documents(&data.catalog.value.schools)?;
+    let programs = simulation_programs(&catalog, data.programs.value)?;
     tracing::info!(
         programs = programs.len(),
         catalog_programs = catalog.len(),
-        "loaded data files"
+        "built the simulation programs"
     );
-    match &args.database_url {
-        Some(url) => {
-            let repository = PostgresRunRepository::connect(url, 5).await?;
-            repository.migrate().await?;
-            tracing::info!("runs are stored in PostgreSQL");
-            serve_with(args, repository, programs, student, catalog).await
-        }
-        None => {
-            let capacity = NonZeroUsize::new(args.max_runs).ok_or(AppError::ZeroMaxRuns)?;
-            tracing::info!(capacity, "runs are stored in memory");
-            serve_with(
-                args,
-                InMemoryRunRepository::new(capacity),
-                programs,
-                student,
-                catalog,
-            )
-            .await
-        }
-    }
+    serve_with(
+        args,
+        runs,
+        programs,
+        student_to_dto(&data.student.value),
+        catalog,
+        data.results.value,
+    )
+    .await
 }
 
 /// Generic over the run store so both stores use static dispatch; the
@@ -179,15 +271,24 @@ pub async fn run_serve(args: &ServeArgs) -> Result<(), AppError> {
 async fn serve_with<R>(
     args: &ServeArgs,
     repository: R,
-    programs: crate::domain::ProgramDefinitions,
+    programs: ProgramDefinitions,
     student: StudentDto,
-    catalog: Vec<crate::domain::CatalogProgram>,
+    catalog: Vec<CatalogProgram>,
+    results: TestResults,
 ) -> Result<(), AppError>
 where
     R: RunRepository + Clone + Send + Sync + 'static,
 {
     let limits = HttpLimits::default();
-    let state = build_state(repository, SystemClock, programs, student, catalog, &limits);
+    let state = build_state(
+        repository,
+        SystemClock,
+        programs,
+        student,
+        catalog,
+        results,
+        &limits,
+    );
     let app = router(state, &limits);
     let listener = tokio::net::TcpListener::bind(&args.bind)
         .await
@@ -206,9 +307,10 @@ where
 pub fn build_state<R, C>(
     repository: R,
     clock: C,
-    programs: crate::domain::ProgramDefinitions,
+    programs: ProgramDefinitions,
     student: StudentDto,
-    catalog: Vec<crate::domain::CatalogProgram>,
+    catalog: Vec<CatalogProgram>,
+    results: TestResults,
     limits: &HttpLimits,
 ) -> AppState<R, C>
 where
@@ -218,7 +320,7 @@ where
     AppState {
         simulate: Arc::new(SimulateStudent::new(programs, repository.clone(), clock)),
         runs: Arc::new(RunQueries::new(repository)),
-        scan: Arc::new(ScanCatalog::new(catalog)),
+        scan: Arc::new(ScanCatalog::new(catalog, results)),
         default_student: Arc::new(student),
         cpu_permits: Arc::new(Semaphore::new(limits.cpu_permits.max(1))),
         recent_runs: limits.recent_runs,
@@ -235,25 +337,24 @@ async fn shutdown_signal() {
     tracing::info!("shutdown requested");
 }
 
-/// Loads the bundled data files for tests and local tools.
-pub fn load_bundled(
-    data_dir: &Path,
-) -> Result<
-    (
-        crate::domain::ProgramDefinitions,
-        StudentDto,
-        Vec<crate::domain::CatalogProgram>,
-    ),
-    AppError,
-> {
-    Ok((
-        load_program_definitions(&data_dir.join("programs.json"))?,
-        load_student(&data_dir.join("student.json"))?,
-        load_catalog(&data_dir.join("myschools_d15_d20.json"))?,
-    ))
+/// The data files loaded for the web server.
+pub struct BundledData {
+    pub programs: ProgramDefinitions,
+    pub student: StudentDto,
+    pub catalog: Vec<CatalogProgram>,
+    pub results: TestResults,
 }
 
-#[allow(dead_code)]
-fn _assert_run_dto_is_used() {
-    let _ = run_to_dto;
+/// Loads the seed files and a catalog file for tests and local tools, with
+/// no test results. The programs are derived from the catalog with the seed
+/// programs merged on top, as `serve` does.
+pub fn load_bundled(seed_dir: &Path, catalog_file: &Path) -> Result<BundledData, AppError> {
+    let curated = load_program_definitions(&seed_dir.join("programs.json"))?;
+    let catalog = load_catalog(catalog_file)?;
+    Ok(BundledData {
+        programs: simulation_programs(&catalog, curated)?,
+        student: load_student(&seed_dir.join("student.json"))?,
+        catalog,
+        results: TestResults::new(),
+    })
 }

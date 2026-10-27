@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use crate::application::Run;
 use crate::domain::program::DuplicateProgramCode;
 use crate::domain::{
-    Attribute, Attrition, GroupDemand, InvalidAttribute, InvalidAttrition, InvalidGroupDemand,
-    InvalidLotteryPrefix, InvalidProgram, InvalidProgramCode, InvalidRanking,
+    with_boroughs, Attribute, Attrition, GroupDemand, InvalidAttribute, InvalidAttrition,
+    InvalidGroupDemand, InvalidLotteryPrefix, InvalidProgram, InvalidProgramCode, InvalidRanking,
     InvalidStandardDeviation, InvalidTrials, InvalidUnitInterval, LotteryPrefix, Parameters,
     PriorityGroup, Program, ProgramCode, ProgramDefinitions, ProgramRow, Ranking, Report, ScanRow,
     Seed, SelectionKind, StandardDeviation, Student, Summary, Trials, UnitInterval,
@@ -252,6 +252,10 @@ pub struct ScanRowDto {
     pub your_group_offered: Option<u32>,
     pub your_group_share: Option<f64>,
     pub reach: String,
+    pub dbn: String,
+    pub scores_year: Option<u32>,
+    pub ela_proficient_pct: Option<f64>,
+    pub math_proficient_pct: Option<f64>,
 }
 
 pub fn parse_attributes<'a>(
@@ -361,7 +365,7 @@ pub fn program_definitions_to_dto(definitions: &ProgramDefinitions) -> ProgramsF
 }
 
 pub fn student_from_dto(dto: StudentDto) -> Result<Student, InvalidInput> {
-    let attributes = parse_attributes(dto.attributes.iter().map(String::as_str))?;
+    let attributes = with_boroughs(parse_attributes(dto.attributes.iter().map(String::as_str))?);
     let ranking = Ranking::new(parse_codes(dto.ranking.iter().map(String::as_str))?)?;
     let lottery_number = dto
         .lottery_number
@@ -524,6 +528,10 @@ pub fn scan_row_to_dto(row: &ScanRow) -> ScanRowDto {
         your_group_offered: row.group_offered,
         your_group_share: row.group_share,
         reach: row.reach.label().to_owned(),
+        dbn: row.dbn.clone(),
+        scores_year: row.scores.map(|s| s.year),
+        ela_proficient_pct: row.scores.and_then(|s| s.ela_proficient_pct),
+        math_proficient_pct: row.scores.and_then(|s| s.math_proficient_pct),
     }
 }
 
@@ -623,7 +631,10 @@ mod tests {
         assert_eq!(student.ranking.len(), 2);
         let back = student_to_dto(&student);
         assert_eq!(back.lottery_number.as_deref(), Some("BD"));
-        assert_eq!(back.attributes, vec!["d15", "d20", "mark_twain_test"]);
+        assert_eq!(
+            back.attributes,
+            vec!["borough_brooklyn", "d15", "d20", "mark_twain_test"]
+        );
     }
 
     #[test]
@@ -638,7 +649,8 @@ mod tests {
         };
         let student = student_from_dto(dto).expect("valid");
         assert_eq!(student.lottery_number, None);
-        assert_eq!(student.attributes.len(), 1);
+        // d15 plus the derived borough attribute.
+        assert_eq!(student.attributes.len(), 2);
     }
 
     #[test]

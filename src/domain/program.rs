@@ -312,6 +312,15 @@ impl ProgramDefinitions {
         self.programs.get(code)
     }
 
+    /// Returns these definitions with `overrides` replacing programs of the
+    /// same code and adding the rest.
+    pub fn merged_with(mut self, overrides: ProgramDefinitions) -> Self {
+        for (code, program) in overrides.programs {
+            self.programs.insert(code, program);
+        }
+        self
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &Program> {
         self.programs.values()
     }
@@ -467,6 +476,36 @@ mod tests {
             None,
         );
         assert_eq!(err, Err(InvalidProgram::EmptyName(code)));
+    }
+
+    #[test]
+    fn merged_definitions_prefer_the_overrides() {
+        let make = |code: &str, name: &str| {
+            Program::new(
+                ProgramCode::parse(code).expect("valid"),
+                name.to_owned(),
+                1,
+                1,
+                SelectionKind::Lottery,
+                vec![],
+                None,
+                None,
+            )
+            .expect("valid")
+        };
+        let base = ProgramDefinitions::new(vec![make("K1", "base one"), make("K2", "base two")])
+            .expect("valid");
+        let overrides =
+            ProgramDefinitions::new(vec![make("K2", "curated two"), make("K3", "three")])
+                .expect("valid");
+        let merged = base.merged_with(overrides);
+        assert_eq!(merged.len(), 3);
+        assert_eq!(
+            merged
+                .get(&ProgramCode::parse("K2").expect("valid"))
+                .map(Program::name),
+            Some("curated two")
+        );
     }
 
     #[test]

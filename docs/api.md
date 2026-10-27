@@ -23,17 +23,16 @@ address is a deployment choice, not an authentication check.
 | Request timeout | 60 s, status 408 | `HttpLimits::request_timeout` |
 | Concurrent simulations | one per CPU | `HttpLimits::cpu_permits` |
 | Trials per run | 5,000,000 | `domain::simulation::MAX_TRIALS` |
-| Runs kept in memory | `--max-runs`, default 100 | in-memory store only |
 
 ## Endpoints
 
 | Method and path | Purpose | Success | Errors |
 | --- | --- | --- | --- |
-| `GET /` | Simulate form, program list, recent runs | 200 HTML | |
+| `GET /` | Questions, program codes (filtered by repeated `district` keys), recent runs | 200 HTML | |
 | `POST /simulate` | Form submit | 303 to `/runs/{id}` | 422 HTML with the message |
 | `GET /runs/{id}` | Report page | 200 HTML | 404 |
 | `GET /scan` | Scan questions and results | 200 HTML | 422 HTML |
-| `GET /programs` | Program definitions | 200 HTML | |
+| `GET /programs` | Program definitions, filtered by repeated `district` keys | 200 HTML | |
 | `POST /api/simulate` | Run a simulation | 201 JSON run | 422 |
 | `GET /api/runs` | Recent runs | 200 JSON array | |
 | `GET /api/runs/{id}` | One run | 200 JSON run | 404 |
@@ -110,7 +109,8 @@ The JSON API exposes the inputs directly.
 | --- | --- | --- |
 | `lottery_number` | Hex prefix or blank | `student.lottery_number`; blank means unknown |
 | `talent_test` | `not_taken`, `unknown`, `top_quarter`, `second_quarter`, `third_quarter`, `bottom_quarter` | `not_taken` removes `mark_twain_test`; the quarters set the percentile to 0.125, 0.375, 0.625, 0.875 with spread 0.10; `unknown` draws it |
-| `attribute` (repeated) | Any attribute a program group requires, except `mark_twain_test` | `student.attributes` |
+| `attribute` (repeated) | District chips `d1`…`d32` and `frl` | `student.attributes` |
+| `sibling_codes`, `zoned_codes`, `continuing_codes` | Comma-separated program codes | `sibling_<code>`, `zoned_<code>`, `continuing_<code>` attributes |
 | `ranking` | Comma-separated codes | `student.ranking` |
 | `waitlist` | `redrawn`, `reused` | `parameters.waitlist_numbers` |
 | `outlook` | `as_published`, `hopeful` | `parameters.attrition` 1.0 or 1.3 |
@@ -123,8 +123,9 @@ Query parameters: `attrs` (comma-separated) or repeated `attr` keys, `frl`
 (`1`, `true`, `on`, or `yes`), `lottery` (hex prefix). With no query
 string the defaults are `d15,d20`, not FRL, and `BD`. The
 response lists the attributes, the FRL flag, the lottery prefix and
-fraction, and the rows in reach order. The CSV has the same columns as the
-Python scanner.
+fraction, and the rows in reach order. Each row also carries the school's
+`dbn`, `scores_year`, `ela_proficient_pct`, and `math_proficient_pct`.
+The CSV has the Python scanner's columns followed by those four.
 
 ## Command line
 
@@ -133,13 +134,15 @@ nycmsa sim   [--programs data/programs.json] [--student data/student.json]
              [--trials 200000] [--seed 0] [--demand-sd 0.15] [--attrition 1.0]
              [--waitlist-numbers redrawn|reused] [--rank CODE...] [--no-test]
              [--twain-pct 0.25] [--lottery B0] [--json]
-nycmsa scan  [DATA=data/myschools_d15_d20.json] [--frl] [--attrs d15,d20]
-             [--lottery BD] [--csv out.csv]
-nycmsa fetch [OUT=myschools_ms.json] [--districts 15,20|all]
-nycmsa serve [--bind 127.0.0.1:8080] [--programs ...] [--student ...]
-             [--catalog ...] [--max-runs 100] [--database-url URL]
+nycmsa scan  CATALOG.json [--frl] [--attrs d15,d20] [--lottery BD] [--csv out.csv]
+nycmsa fetch        [--districts all] --database-url URL
+nycmsa fetch-scores --database-url URL
+nycmsa import       [--programs data/programs.json] [--student data/student.json] --database-url URL
+nycmsa bootstrap    [--programs ...] [--student ...] [--districts all] --database-url URL
+nycmsa serve        [--bind 127.0.0.1:8080] --database-url URL
 ```
 
 `--database-url` also reads `DATABASE_URL`. `RUST_LOG` sets the log
 filter; the default is `info`. A failed command exits with status 1 and
-prints the error chain to stderr.
+prints the error chain to stderr. `sim` and `scan` read files and need no
+database.

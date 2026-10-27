@@ -127,6 +127,43 @@ See [ADR 0003](decisions/0003-waitlist-number-assumption.md).
 - Changes in the applicant pool or the admissions rules between years,
   beyond the demand noise and attrition multipliers.
 
+## Programs derived from the catalog
+
+The web server simulates every program in the MySchools catalog that
+published seats or applicants, not only the hand-entered ones.
+`programs_from_catalog` builds them:
+
+- Open and zone-priority programs rank by lottery number. Screened,
+  talent test, audition, and language programs are modelled as a screened
+  test: the student's expected placement decides, not the lottery number.
+- Each MySchools priority group becomes one simulation group, or two when
+  the DOE reports its figures for free or reduced price lunch students
+  separately: the FRL slice first (it also requires `frl`), then the rest.
+- Group rules become required attributes: `d15` for a district, a borough
+  attribute such as `borough_brooklyn` for a borough (derived from the
+  district attributes), and per-program attributes `sibling_K442S`,
+  `zoned_K062Z`, `continuing_K686A`, `attends_K686A` for sibling, zone,
+  continuing-student, and current-student rules. A group whose rule the
+  parser does not recognise admits nobody.
+- Offers are capped at applicants; both are rounded in the source text.
+- First-round offers are an estimate: the seats are filled in priority
+  order, each group taking `min(offers, seats still open)`. The rest of a
+  group's offers count as waitlist offers. The hand-entered
+  `data/programs.json` keeps the DOE's own split where it was read from
+  the screenshots, and its programs replace the derived ones of the same
+  code.
+
+District codes drop leading zeros, so the school code `09` and the group
+text "District 9" both give `d9`.
+
+## State test results
+
+The scan page shows, for each school, the share of its students at
+proficiency (levels 3 and 4) on the New York State ELA and Math tests, for
+the latest year NYC Open Data holds (2023 at the time of writing). The
+figures are keyed by the school's DBN and are informational; the
+simulation does not use them.
+
 ## Catalog scan
 
 `scan` reads a list of `CatalogProgram`s from the MySchools catalog. For
@@ -146,4 +183,7 @@ non-FRL slice of that group's figures, and classifies the program:
 
 Rows sort by offer share, with open-seat programs first among the rows
 without a share. The parsing of MySchools prose into figures and of group
-names into criteria is adapter work in `src/adapters/myschools.rs`.
+names into criteria is adapter work in `src/adapters/myschools.rs`. Unlike
+the Python scanner, borough groups ("Bronx students and residents") admit
+a student from any district in that borough, so five District 15 and 20
+programs classify differently.

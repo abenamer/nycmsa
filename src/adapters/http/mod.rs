@@ -194,16 +194,32 @@ async fn healthz() -> &'static str {
     "ok\n"
 }
 
-async fn home<R, C>(State(state): State<AppState<R, C>>) -> Result<Html<String>, HttpError>
+/// Districts named by repeated `district` keys in a query string.
+fn district_filter(raw: Option<&str>) -> Vec<String> {
+    raw.map(|r| {
+        pairs(r.as_bytes())
+            .into_iter()
+            .filter(|(k, _)| k == "district")
+            .map(|(_, v)| v.trim().trim_start_matches('d').to_owned())
+            .filter(|v| !v.is_empty())
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+async fn home<R, C>(
+    State(state): State<AppState<R, C>>,
+    RawQuery(raw): RawQuery,
+) -> Result<Html<String>, HttpError>
 where
     R: RunRepository + Send + Sync + 'static,
     C: Clock + Send + Sync + 'static,
 {
     let recent = state.runs.recent(state.recent_runs).await?;
-    let definitions = state.simulate.default_programs();
     let template = HomePage::new(
-        views::FormValues::from_student(&state.default_student, definitions),
-        definitions,
+        views::FormValues::from_student(&state.default_student, &state.scan.districts()),
+        &state,
+        &district_filter(raw.as_deref()),
         &recent,
         None,
     );
@@ -217,7 +233,14 @@ where
 pub struct SimulateForm {
     pub ranking: String,
     pub lottery_number: String,
+    /// District and FRL chips, plus any raw attribute.
     pub attributes: Vec<String>,
+    /// Program codes where a sibling will be enrolled.
+    pub sibling_codes: String,
+    /// Program codes the child is zoned for.
+    pub zoned_codes: String,
+    /// Program codes the child already attends (continuing student).
+    pub continuing_codes: String,
     pub talent_test: String,
     pub waitlist: String,
     pub outlook: String,
@@ -247,6 +270,9 @@ impl SimulateForm {
                 "ranking" => form.ranking = value,
                 "lottery_number" => form.lottery_number = value,
                 "attribute" => form.attributes.push(value),
+                "sibling_codes" => form.sibling_codes = value,
+                "zoned_codes" => form.zoned_codes = value,
+                "continuing_codes" => form.continuing_codes = value,
                 "talent_test" => form.talent_test = value,
                 "waitlist" => form.waitlist = value,
                 "outlook" => form.outlook = value,
@@ -278,6 +304,15 @@ impl SimulateForm {
             .flat_map(|a| split_list(a).map(str::to_owned))
             .filter(|a| a != "mark_twain_test")
             .collect();
+        for (prefix, codes) in [
+            ("sibling", &self.sibling_codes),
+            ("zoned", &self.zoned_codes),
+            ("continuing", &self.continuing_codes),
+        ] {
+            for code in split_list(codes) {
+                attributes.push(format!("{prefix}_{}", code.trim().to_uppercase()));
+            }
+        }
         if talent.took_test() {
             attributes.push("mark_twain_test".to_owned());
         }
@@ -342,10 +377,10 @@ where
     C: Clock + Send + Sync + 'static,
 {
     let recent = state.runs.recent(state.recent_runs).await?;
-    let definitions = state.simulate.default_programs();
     let template = HomePage::new(
-        views::FormValues::from_form(form, definitions),
-        definitions,
+        views::FormValues::from_form(form, &state.scan.districts()),
+        state,
+        &[],
         &recent,
         Some(message),
     );
@@ -498,6 +533,7 @@ where
                 Some((&request, &rows)),
                 &districts,
                 state.scan.program_count(),
+                state.scan.schools_with_scores(),
                 None,
             );
             Ok(page(&template)?.into_response())
@@ -508,6 +544,7 @@ where
                 None,
                 &districts,
                 state.scan.program_count(),
+                state.scan.schools_with_scores(),
                 Some(error.to_string()),
             );
             Ok((StatusCode::UNPROCESSABLE_ENTITY, page(&template)?).into_response())
@@ -564,12 +601,15 @@ where
         .into_response())
 }
 
-async fn programs_page<R, C>(State(state): State<AppState<R, C>>) -> Result<Html<String>, HttpError>
+async fn programs_page<R, C>(
+    State(state): State<AppState<R, C>>,
+    RawQuery(raw): RawQuery,
+) -> Result<Html<String>, HttpError>
 where
     R: RunRepository + Send + Sync + 'static,
     C: Clock + Send + Sync + 'static,
 {
-    page(&ProgramsPage::new(state.simulate.default_programs()))
+    page(&ProgramsPage::new(&state, &district_filter(raw.as_deref())))
 }
 
 async fn programs_json<R, C>(State(state): State<AppState<R, C>>) -> Result<Response, HttpError>
@@ -599,7 +639,10 @@ mod tests {
             .iter()
             .map(|a| a.as_str())
             .collect();
-        assert_eq!(attrs, vec!["d15", "d20", "mark_twain_test"]);
+        assert_eq!(
+            attrs,
+            vec!["borough_brooklyn", "d15", "d20", "mark_twain_test"]
+        );
         assert_eq!(request.student.ranking.len(), 2);
         assert_eq!(
             request.student.talent_test_percentile.map(|p| p.get()),
@@ -612,6 +655,37 @@ mod tests {
             request.parameters.waitlist_numbers,
             crate::domain::WaitlistNumbers::Reused
         );
+    }
+
+    #[test]
+    fn form_code_fields_become_per_program_attributes() {
+        let body = b"ranking=K442S&attribute=d15&sibling_codes=k442s%2C+K443M&zoned_codes=K062Z&continuing_codes=&talent_test=not_taken&waitlist=redrawn&outlook=as_published";
+        let request = SimulateForm::from_body(body).to_request().expect("valid");
+        let attrs: Vec<&str> = request
+            .student
+            .attributes
+            .iter()
+            .map(|a| a.as_str())
+            .collect();
+        assert_eq!(
+            attrs,
+            vec![
+                "borough_brooklyn",
+                "d15",
+                "sibling_K442S",
+                "sibling_K443M",
+                "zoned_K062Z"
+            ]
+        );
+    }
+
+    #[test]
+    fn district_filter_reads_repeated_keys() {
+        assert_eq!(
+            district_filter(Some("district=15&district=d20&x=1")),
+            vec!["15", "20"]
+        );
+        assert!(district_filter(None).is_empty());
     }
 
     #[test]

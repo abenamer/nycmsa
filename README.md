@@ -16,20 +16,36 @@ typed errors, and an OKF documentation bundle in [`docs/`](docs/index.md).
   characters place the number to 0.4%).
 - How high your child will place on a screened test: don't know, or a
   quarter of the field.
-- Which priority facts apply (district, free or reduced-price lunch,
-  sibling, continuing student).
+- Which school district you live in (any of the 32), free or reduced-price
+  lunch, and the programs where a sibling, zone, or continuing-student
+  priority applies.
 - The ranked list of program codes.
 - Two assumption chips: whether waitlists draw a new number or keep the
   old one, and whether to take last year's numbers as published or assume
   schools reach further down their lists.
 
 The result gives one chance of an offer per program, then walks through
-the stages: the lottery round, screened programs, and waitlists. The JSON
-API and the CLI expose every model input directly.
+the stages: the lottery round, screened programs, and waitlists. The
+"Which schools?" page lists every eligible program citywide with last
+year's offers for your priority group and the school's ELA and math
+proficiency from NYC Open Data, sortable by any column. The JSON API and
+the CLI expose every model input directly.
+
+All figures are last year's admissions numbers as reported on the
+MySchools website. The server derives programs for every district from
+the full catalog; `data/programs.json` holds hand-checked figures that
+replace the derived entries for the codes it covers. Every refresh adds a
+snapshot to the database; older snapshots stay.
 
 ## Run
 
+Everything the server reads lives in PostgreSQL: simulation runs, the
+MySchools catalog, state test results, the hand-entered programs, and the
+form defaults.
+
 ```bash
+export DATABASE_URL=postgres://nycmsa:secret@127.0.0.1/nycmsa
+cargo run --release --locked -- bootstrap   # seeds, catalog, scores
 cargo run --release --locked -- serve
 # open http://127.0.0.1:8080
 ```
@@ -38,11 +54,13 @@ Command line, as in the Python original:
 
 ```bash
 cargo run --release --locked -- sim --lottery B0 --twain-pct 0.25 --rank K187A K442S
-cargo run --release --locked -- scan --attrs d15,d20 --lottery BD --csv scan.csv
-cargo run --release --locked -- fetch data/myschools_d15_d20.json --districts 15,20
+cargo run --release --locked -- fetch          # new catalog snapshot
+cargo run --release --locked -- fetch-scores   # new test-results snapshot
+cargo run --release --locked -- scan tests/fixtures/myschools_d15_d20.json --lottery BD
 ```
 
-With Docker Compose, PostgreSQL stores the runs on a named volume:
+With Docker Compose, a one-shot `init` service bootstraps the database on
+the named volume `nycmsa_pgdata` and the app serves from it:
 
 ```bash
 docker compose up --build
@@ -59,7 +77,8 @@ and hosting, and the [API reference](docs/api.md) for the JSON endpoints.
 | `src/application/` | Use cases and ports |
 | `src/adapters/` | HTTP (Axum, Askama), CLI (Clap), JSON files, MySchools parser and client, in-memory and PostgreSQL run stores |
 | `src/composition.rs` | Composition root |
-| `data/` | `programs.json`, `student.json`, MySchools catalog snapshots |
+| `data/` | Seed files: `programs.json`, `student.json` |
+| `tests/fixtures/` | A districts 15 and 20 catalog for the HTTP tests |
 | `migrations/` | SQLx migrations |
 | `docs/` | OKF knowledge bundle; start at [`docs/index.md`](docs/index.md) |
 | `scripts/`, `tests/test_docs.py` | Documentation checker and its tests |

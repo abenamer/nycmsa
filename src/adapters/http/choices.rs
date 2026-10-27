@@ -200,33 +200,6 @@ pub fn attribute_label(attribute: &str, definitions: &ProgramDefinitions) -> Str
     }
 }
 
-/// The eligibility chips to offer: every attribute a program group
-/// requires, except the talent test, which has its own chips. Districts
-/// come first.
-pub fn attribute_chips(definitions: &ProgramDefinitions) -> Vec<String> {
-    let mut attributes: Vec<String> = definitions
-        .iter()
-        .flat_map(|p| p.groups().iter())
-        .flat_map(|g| g.requires.iter())
-        .map(|a| a.as_str().to_owned())
-        .filter(|a| a != "mark_twain_test")
-        .collect();
-    attributes.sort_by_key(|a| {
-        let rank = if a.starts_with('d') && a[1..].chars().all(|c| c.is_ascii_digit()) {
-            0
-        } else if a == "frl" {
-            1
-        } else if a.starts_with("sibling_") {
-            2
-        } else {
-            3
-        };
-        (rank, a.clone())
-    });
-    attributes.dedup();
-    attributes
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

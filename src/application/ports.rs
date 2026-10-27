@@ -4,7 +4,7 @@ use std::fmt;
 use std::num::NonZeroU64;
 use std::time::SystemTime;
 
-use crate::domain::{DistrictCode, Report, Student};
+use crate::domain::{DistrictCode, ProgramDefinitions, Report, Student, TestResults};
 
 use super::download::DistrictFilter;
 
@@ -129,6 +129,21 @@ pub enum DownloadError {
     Malformed { url: String, reason: String },
 }
 
+/// State test results with the source they came from.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct TestResultsSnapshot {
+    pub results: TestResults,
+    /// Where the figures came from, for the record.
+    pub source: String,
+}
+
+/// Outbound port: download of state test results per school.
+pub trait TestResultsDownloader {
+    // Awaited on the main task; no `Send` bound is needed.
+    #[allow(async_fn_in_trait)]
+    async fn download(&self) -> Result<TestResultsSnapshot, DownloadError>;
+}
+
 /// Outbound port: download of the MySchools catalog.
 ///
 /// Native `async fn`; the composition root awaits it on the main task, so
@@ -171,4 +186,61 @@ mod tests {
         assert!(!CatalogSnapshot::school_matches(&none, &only));
         assert!(CatalogSnapshot::school_matches(&none, &DistrictFilter::All));
     }
+}
+
+/// A stored reference snapshot with its provenance.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Stored<T> {
+    pub recorded_at: SystemTime,
+    pub source: String,
+    pub value: T,
+}
+
+/// Outbound port: versioned MySchools catalog snapshots. Every save adds a
+/// snapshot; `latest` returns the most recent one.
+#[async_trait::async_trait]
+pub trait CatalogStore {
+    async fn save_catalog(
+        &self,
+        snapshot: &CatalogSnapshot,
+        source: &str,
+        recorded_at: SystemTime,
+    ) -> Result<(), RepositoryError>;
+    async fn latest_catalog(&self) -> Result<Option<Stored<CatalogSnapshot>>, RepositoryError>;
+}
+
+/// Outbound port: versioned state test results.
+#[async_trait::async_trait]
+pub trait TestResultsStore {
+    async fn save_test_results(
+        &self,
+        results: &TestResults,
+        source: &str,
+        recorded_at: SystemTime,
+    ) -> Result<(), RepositoryError>;
+    async fn latest_test_results(&self) -> Result<Option<Stored<TestResults>>, RepositoryError>;
+}
+
+/// Outbound port: versioned hand-entered program definitions.
+#[async_trait::async_trait]
+pub trait ProgramStore {
+    async fn save_programs(
+        &self,
+        programs: &ProgramDefinitions,
+        source: &str,
+        recorded_at: SystemTime,
+    ) -> Result<(), RepositoryError>;
+    async fn latest_programs(&self) -> Result<Option<Stored<ProgramDefinitions>>, RepositoryError>;
+}
+
+/// Outbound port: versioned defaults that prefill the web form.
+#[async_trait::async_trait]
+pub trait StudentDefaultsStore {
+    async fn save_student_defaults(
+        &self,
+        student: &Student,
+        source: &str,
+        recorded_at: SystemTime,
+    ) -> Result<(), RepositoryError>;
+    async fn latest_student_defaults(&self) -> Result<Option<Stored<Student>>, RepositoryError>;
 }

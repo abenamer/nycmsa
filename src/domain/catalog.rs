@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use super::lottery::LotteryPrefix;
-use super::program::{Attribute, ProgramCode};
+use super::program::{Attribute, GroupDemand, PriorityGroup, Program, ProgramCode, SelectionKind};
 
 /// A DOE community school district code, such as `15`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -17,12 +17,27 @@ pub struct DistrictCode(String);
 pub struct InvalidDistrictCode;
 
 impl DistrictCode {
+    /// Parses a code. MySchools writes `09` for a school and `District 9`
+    /// in group names, so an all-digit code drops its leading zeros.
     pub fn parse(raw: &str) -> Result<Self, InvalidDistrictCode> {
         let trimmed = raw.trim();
         if trimmed.is_empty() {
             return Err(InvalidDistrictCode);
         }
+        if trimmed.chars().all(|c| c.is_ascii_digit()) {
+            let digits = trimmed.trim_start_matches('0');
+            return Ok(Self(if digits.is_empty() {
+                "0".to_owned()
+            } else {
+                digits.to_owned()
+            }));
+        }
         Ok(Self(trimmed.to_owned()))
+    }
+
+    /// The borough of a community school district.
+    pub fn borough(&self) -> Option<Borough> {
+        self.0.parse::<u32>().ok().and_then(Borough::of_district)
     }
 
     pub fn as_str(&self) -> &str {
@@ -41,6 +56,76 @@ impl fmt::Display for DistrictCode {
     }
 }
 
+/// A NYC borough. Community school districts 1–6 are Manhattan, 7–12 the
+/// Bronx, 13–23 and 32 Brooklyn, 24–30 Queens, and 31 Staten Island.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Borough {
+    Manhattan,
+    Bronx,
+    Brooklyn,
+    Queens,
+    StatenIsland,
+}
+
+impl Borough {
+    pub const ALL: [Borough; 5] = [
+        Borough::Manhattan,
+        Borough::Bronx,
+        Borough::Brooklyn,
+        Borough::Queens,
+        Borough::StatenIsland,
+    ];
+
+    pub fn of_district(district: u32) -> Option<Borough> {
+        match district {
+            1..=6 => Some(Borough::Manhattan),
+            7..=12 => Some(Borough::Bronx),
+            13..=23 | 32 => Some(Borough::Brooklyn),
+            24..=30 => Some(Borough::Queens),
+            31 => Some(Borough::StatenIsland),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Borough::Manhattan => "Manhattan",
+            Borough::Bronx => "Bronx",
+            Borough::Brooklyn => "Brooklyn",
+            Borough::Queens => "Queens",
+            Borough::StatenIsland => "Staten Island",
+        }
+    }
+
+    /// The attribute a resident of this borough holds, such as
+    /// `borough_brooklyn`.
+    pub fn resident_attribute(self) -> Attribute {
+        let slug = match self {
+            Borough::Manhattan => "manhattan",
+            Borough::Bronx => "bronx",
+            Borough::Brooklyn => "brooklyn",
+            Borough::Queens => "queens",
+            Borough::StatenIsland => "staten_island",
+        };
+        Attribute::parse(&format!("borough_{slug}")).expect("a borough slug has no whitespace")
+    }
+}
+
+/// Adds the borough attribute for every district attribute the student
+/// holds, so a borough priority group can admit them.
+pub fn with_boroughs(attributes: BTreeSet<Attribute>) -> BTreeSet<Attribute> {
+    let boroughs: Vec<Attribute> = attributes
+        .iter()
+        .filter_map(|a| a.as_str().strip_prefix('d'))
+        .filter_map(|d| d.parse::<u32>().ok())
+        .filter_map(Borough::of_district)
+        .map(Borough::resident_attribute)
+        .collect();
+    let mut all = attributes;
+    all.extend(boroughs);
+    all
+}
+
 /// The eligibility rule behind a MySchools priority-group name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PriorityCriterion {
@@ -49,13 +134,15 @@ pub enum PriorityCriterion {
     Zoned,
     CurrentStudent,
     District(DistrictCode),
+    Borough(Borough),
     AnyNycResident,
     /// The name did not match a known rule. No student is eligible.
     Unrecognized,
 }
 
 impl PriorityCriterion {
-    /// True when the student's attributes satisfy the rule.
+    /// True when the student's attributes satisfy the rule. Borough rules
+    /// read the district attributes.
     pub fn admits(&self, attributes: &BTreeSet<Attribute>) -> bool {
         let has = |name: &str| attributes.iter().any(|a| a.as_str() == name);
         match self {
@@ -64,8 +151,28 @@ impl PriorityCriterion {
             PriorityCriterion::Zoned => has("zoned"),
             PriorityCriterion::CurrentStudent => has("current_student"),
             PriorityCriterion::District(code) => attributes.contains(&code.resident_attribute()),
+            PriorityCriterion::Borough(borough) => {
+                with_boroughs(attributes.clone()).contains(&borough.resident_attribute())
+            }
             PriorityCriterion::AnyNycResident => true,
             PriorityCriterion::Unrecognized => false,
+        }
+    }
+
+    /// The attributes a simulation program group requires for this rule.
+    /// Per-program rules (sibling, zone, continuing, attending) take the
+    /// program code so they apply to that program only.
+    pub fn required_attributes(&self, program: &ProgramCode) -> Vec<Attribute> {
+        let one = |raw: String| vec![Attribute::parse(&raw).expect("no whitespace")];
+        match self {
+            PriorityCriterion::Sibling => one(format!("sibling_{program}")),
+            PriorityCriterion::Continuing => one(format!("continuing_{program}")),
+            PriorityCriterion::Zoned => one(format!("zoned_{program}")),
+            PriorityCriterion::CurrentStudent => one(format!("attends_{program}")),
+            PriorityCriterion::District(code) => vec![code.resident_attribute()],
+            PriorityCriterion::Borough(borough) => vec![borough.resident_attribute()],
+            PriorityCriterion::AnyNycResident => vec![],
+            PriorityCriterion::Unrecognized => one("unrecognized_priority_group".to_owned()),
         }
     }
 }
@@ -120,10 +227,24 @@ pub struct CatalogGroup {
     pub demand: GroupDemandText,
 }
 
+/// State test results for one school, as the share of students at
+/// proficiency (levels 3 and 4) in the latest published year.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SchoolScores {
+    pub year: u32,
+    pub ela_proficient_pct: Option<f64>,
+    pub math_proficient_pct: Option<f64>,
+}
+
+/// Test results keyed by school DBN, such as `15K442`.
+pub type TestResults = std::collections::BTreeMap<String, SchoolScores>;
+
 /// A program as listed in the MySchools catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogProgram {
     pub district: DistrictCode,
+    /// The school's DBN, such as `15K442`.
+    pub dbn: String,
     pub school_name: String,
     pub code: ProgramCode,
     pub program_name: String,
@@ -139,6 +260,7 @@ impl CatalogProgram {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         district: DistrictCode,
+        dbn: String,
         school_name: String,
         code: ProgramCode,
         program_name: String,
@@ -151,6 +273,7 @@ impl CatalogProgram {
         groups.sort_by_key(|g| g.order);
         Self {
             district,
+            dbn,
             school_name,
             code,
             program_name,
@@ -236,6 +359,7 @@ impl fmt::Display for Reach {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScanRow {
     pub district: DistrictCode,
+    pub dbn: String,
     pub school_name: String,
     pub code: ProgramCode,
     pub program_name: String,
@@ -251,6 +375,8 @@ pub struct ScanRow {
     pub group_offered: Option<u32>,
     pub group_share: Option<f64>,
     pub reach: Reach,
+    /// The school's latest state test results, when known.
+    pub scores: Option<SchoolScores>,
 }
 
 impl ScanRow {
@@ -298,7 +424,11 @@ fn classify(
 }
 
 /// Lists every program the student is eligible for, most reachable first.
-pub fn scan(catalog: &[CatalogProgram], request: &ScanRequest) -> Vec<ScanRow> {
+pub fn scan(
+    catalog: &[CatalogProgram],
+    results: &TestResults,
+    request: &ScanRequest,
+) -> Vec<ScanRow> {
     let lottery_fraction = request.lottery.fraction().get();
     let mut rows: Vec<ScanRow> = catalog
         .iter()
@@ -309,6 +439,7 @@ pub fn scan(catalog: &[CatalogProgram], request: &ScanRequest) -> Vec<ScanRow> {
             let share = slice.and_then(DemandPair::share);
             Some(ScanRow {
                 district: program.district.clone(),
+                dbn: program.dbn.clone(),
                 school_name: program.school_name.clone(),
                 code: program.code.clone(),
                 program_name: program.program_name.clone(),
@@ -323,12 +454,96 @@ pub fn scan(catalog: &[CatalogProgram], request: &ScanRequest) -> Vec<ScanRow> {
                 group_offered: slice.and_then(|p| p.offers),
                 group_share: share,
                 reach: classify(program, slice, share, lottery_fraction),
+                scores: results.get(&program.dbn).copied(),
             })
         })
         .collect();
     // Stable sort keeps the catalog order for equal values.
     rows.sort_by(|a, b| b.sort_value().total_cmp(&a.sort_value()));
     rows
+}
+
+/// Builds simulation programs from the catalog.
+///
+/// Rules:
+///
+/// - Programs without published seats or applicants are left out.
+/// - Open and zone-priority programs rank by lottery; every other method
+///   is modelled as a screened test.
+/// - Each priority group becomes one simulation group, or two when
+///   MySchools splits its figures by free or reduced price lunch: the FRL
+///   slice first (it also requires `frl`), then the rest.
+/// - Offers are capped at applicants, since both are rounded in the
+///   source text.
+/// - First-round offers are estimated by filling the seats in priority
+///   order: each group takes `min(offers, seats still open)`. The remaining
+///   offers count as waitlist offers.
+pub fn programs_from_catalog(catalog: &[CatalogProgram]) -> Vec<Program> {
+    catalog
+        .iter()
+        .filter(|p| !p.has_no_demand_figures())
+        .filter_map(|p| {
+            let seats = p.seats.unwrap_or(0);
+            let mut remaining = seats;
+            let mut groups = Vec::new();
+            let frl = Attribute::parse("frl").expect("valid");
+            for group in p.groups() {
+                let base = group.criterion.required_attributes(&p.code);
+                let mut slices: Vec<(String, Vec<Attribute>, DemandPair)> = Vec::new();
+                match (group.demand.frl, group.demand.non_frl, group.demand.all) {
+                    (Some(frl_pair), non_frl, _) => {
+                        let mut requires = base.clone();
+                        requires.push(frl.clone());
+                        slices.push((format!("{}, FRL", group.name), requires, frl_pair));
+                        if let Some(pair) = non_frl {
+                            slices.push((format!("{}, non-FRL", group.name), base.clone(), pair));
+                        }
+                    }
+                    (None, Some(pair), _) => {
+                        slices.push((format!("{}, non-FRL", group.name), base.clone(), pair))
+                    }
+                    (None, None, Some(pair)) => slices.push((group.name.clone(), base.clone(), pair)),
+                    (None, None, None) => {}
+                }
+                for (name, requires, pair) in slices {
+                    let offers = pair.offers.unwrap_or(0).min(pair.applicants);
+                    let initial = offers.min(remaining);
+                    remaining -= initial;
+                    let demand = GroupDemand::new(pair.applicants, offers, Some(initial))
+                        .expect("initial <= offers <= applicants by construction");
+                    groups.push(PriorityGroup {
+                        name,
+                        requires,
+                        demand,
+                    });
+                }
+            }
+            let selection = if p.ranks_by_lottery() {
+                SelectionKind::Lottery
+            } else {
+                SelectionKind::Screened
+            };
+            let name = if p.program_name == p.school_name {
+                p.school_name.clone()
+            } else {
+                format!("{} · {}", p.school_name, p.program_name)
+            };
+            Program::new(
+                p.code.clone(),
+                name,
+                seats,
+                p.applicants.unwrap_or(0),
+                selection,
+                groups,
+                Some(p.method.clone()),
+                Some(format!(
+                    "Derived from MySchools: {} program; first-round offers estimated by filling {} seats in priority order.",
+                    p.method, seats
+                )),
+            )
+            .ok()
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -372,6 +587,7 @@ mod tests {
     ) -> CatalogProgram {
         CatalogProgram::new(
             DistrictCode::parse("15").expect("valid"),
+            format!("15{code}"),
             "School".to_owned(),
             ProgramCode::parse(code).expect("valid"),
             "Program".to_owned(),
@@ -396,6 +612,194 @@ mod tests {
         assert_eq!(DistrictCode::parse(" "), Err(InvalidDistrictCode));
         let code = DistrictCode::parse("15").expect("valid");
         assert_eq!(code.resident_attribute().as_str(), "d15");
+        assert_eq!(DistrictCode::parse("09").expect("valid").as_str(), "9");
+        assert_eq!(DistrictCode::parse("00").expect("valid").as_str(), "0");
+        assert_eq!(DistrictCode::parse("75").expect("valid").borough(), None);
+        assert_eq!(code.borough(), Some(Borough::Brooklyn));
+    }
+
+    #[test]
+    fn boroughs_follow_the_district_map() {
+        assert_eq!(Borough::of_district(2), Some(Borough::Manhattan));
+        assert_eq!(Borough::of_district(9), Some(Borough::Bronx));
+        assert_eq!(Borough::of_district(32), Some(Borough::Brooklyn));
+        assert_eq!(Borough::of_district(24), Some(Borough::Queens));
+        assert_eq!(Borough::of_district(31), Some(Borough::StatenIsland));
+        assert_eq!(Borough::of_district(33), None);
+        let expanded = with_boroughs(attrs(&["d15", "frl"]));
+        assert!(expanded.contains(&Borough::Brooklyn.resident_attribute()));
+        assert!(PriorityCriterion::Borough(Borough::Brooklyn).admits(&attrs(&["d20"])));
+        assert!(!PriorityCriterion::Borough(Borough::Queens).admits(&attrs(&["d20"])));
+    }
+
+    #[test]
+    fn required_attributes_are_per_program_where_the_rule_is() {
+        let code = ProgramCode::parse("K442S").expect("valid");
+        let names = |c: PriorityCriterion| -> Vec<String> {
+            c.required_attributes(&code)
+                .iter()
+                .map(|a| a.as_str().to_owned())
+                .collect()
+        };
+        assert_eq!(names(PriorityCriterion::Sibling), vec!["sibling_K442S"]);
+        assert_eq!(names(PriorityCriterion::Zoned), vec!["zoned_K442S"]);
+        assert_eq!(
+            names(PriorityCriterion::District(
+                DistrictCode::parse("15").expect("valid")
+            )),
+            vec!["d15"]
+        );
+        assert_eq!(
+            names(PriorityCriterion::Borough(Borough::Bronx)),
+            vec!["borough_bronx"]
+        );
+        assert!(names(PriorityCriterion::AnyNycResident).is_empty());
+        assert_eq!(
+            names(PriorityCriterion::Unrecognized),
+            vec!["unrecognized_priority_group"]
+        );
+    }
+
+    #[test]
+    fn programs_are_derived_with_seats_filled_in_priority_order() {
+        let d15 = PriorityCriterion::District(DistrictCode::parse("15").expect("valid"));
+        let catalog = vec![
+            CatalogProgram::new(
+                DistrictCode::parse("15").expect("valid"),
+                "15K442".to_owned(),
+                "M.S. 442".to_owned(),
+                ProgramCode::parse("K442S").expect("valid"),
+                "School for Innovation".to_owned(),
+                "Open".to_owned(),
+                Some(81),
+                Some(494),
+                Some(true),
+                vec![
+                    group(1, "Priority to siblings", PriorityCriterion::Sibling, None),
+                    CatalogGroup {
+                        order: 2,
+                        name: "Then to District 15".to_owned(),
+                        criterion: d15,
+                        demand: GroupDemandText {
+                            frl: pair(50, Some(40)),
+                            non_frl: pair(370, Some(40)),
+                            all: None,
+                        },
+                    },
+                    group(
+                        3,
+                        "Then to NYC",
+                        PriorityCriterion::AnyNycResident,
+                        pair(60, Some(0)),
+                    ),
+                ],
+            ),
+            program("K000N", "Screened", None, None, None, vec![]),
+            program(
+                "K001T",
+                "Talent Test",
+                Some(27),
+                Some(191),
+                Some(true),
+                vec![group(
+                    1,
+                    "Then to NYC",
+                    PriorityCriterion::AnyNycResident,
+                    pair(190, Some(200)),
+                )],
+            ),
+        ];
+        // The sibling group has FRL figures only in the first slice.
+        let mut catalog = catalog;
+        catalog[0] = CatalogProgram::new(
+            DistrictCode::parse("15").expect("valid"),
+            "15K442".to_owned(),
+            "M.S. 442".to_owned(),
+            ProgramCode::parse("K442S").expect("valid"),
+            "School for Innovation".to_owned(),
+            "Open".to_owned(),
+            Some(81),
+            Some(494),
+            Some(true),
+            vec![
+                CatalogGroup {
+                    order: 1,
+                    name: "Priority to siblings".to_owned(),
+                    criterion: PriorityCriterion::Sibling,
+                    demand: GroupDemandText {
+                        frl: pair(5, Some(5)),
+                        non_frl: pair(5, Some(5)),
+                        all: None,
+                    },
+                },
+                catalog[0].groups()[1].clone(),
+                catalog[0].groups()[2].clone(),
+            ],
+        );
+        let programs = programs_from_catalog(&catalog);
+        assert_eq!(programs.len(), 2, "the program without figures is skipped");
+        let ms442 = &programs[0];
+        assert_eq!(ms442.name(), "M.S. 442 · School for Innovation");
+        assert_eq!(ms442.selection(), SelectionKind::Lottery);
+        let groups: Vec<(String, Vec<String>, u32, u32, u32)> = ms442
+            .groups()
+            .iter()
+            .map(|g| {
+                (
+                    g.name.clone(),
+                    g.requires.iter().map(|a| a.as_str().to_owned()).collect(),
+                    g.demand.applicants(),
+                    g.demand.offers(),
+                    g.demand.initial_offers(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            groups,
+            vec![
+                (
+                    "Priority to siblings, FRL".to_owned(),
+                    vec!["sibling_K442S".to_owned(), "frl".to_owned()],
+                    5,
+                    5,
+                    5
+                ),
+                (
+                    "Priority to siblings, non-FRL".to_owned(),
+                    vec!["sibling_K442S".to_owned()],
+                    5,
+                    5,
+                    5
+                ),
+                (
+                    "Then to District 15, FRL".to_owned(),
+                    vec!["d15".to_owned(), "frl".to_owned()],
+                    50,
+                    40,
+                    40
+                ),
+                (
+                    "Then to District 15, non-FRL".to_owned(),
+                    vec!["d15".to_owned()],
+                    370,
+                    40,
+                    31
+                ),
+                ("Then to NYC".to_owned(), vec![], 60, 0, 0),
+            ]
+        );
+        let twain = &programs[1];
+        assert_eq!(twain.selection(), SelectionKind::Screened);
+        assert_eq!(
+            twain.groups()[0].demand.offers(),
+            190,
+            "offers capped at applicants"
+        );
+        assert_eq!(
+            twain.groups()[0].demand.initial_offers(),
+            27,
+            "capped at seats"
+        );
     }
 
     #[test]
@@ -613,7 +1017,11 @@ mod tests {
                 )],
             ),
         ];
-        let rows = scan(&catalog, &request(&["d15", "d20"], false, "BD"));
+        let rows = scan(
+            &catalog,
+            &TestResults::new(),
+            &request(&["d15", "d20"], false, "BD"),
+        );
         let by_code: Vec<(&str, Reach)> = rows.iter().map(|r| (r.code.as_str(), r.reach)).collect();
         assert_eq!(
             by_code,
@@ -636,6 +1044,40 @@ mod tests {
     }
 
     #[test]
+    fn scan_joins_test_results_by_dbn() {
+        let d15 = PriorityCriterion::District(DistrictCode::parse("15").expect("valid"));
+        let catalog = vec![program(
+            "K442S",
+            "Open",
+            Some(81),
+            Some(494),
+            Some(true),
+            vec![group(1, "Then to District 15", d15, pair(370, Some(40)))],
+        )];
+        let mut results = TestResults::new();
+        results.insert(
+            "15K442S".to_owned(),
+            SchoolScores {
+                year: 2025,
+                ela_proficient_pct: Some(71.5),
+                math_proficient_pct: None,
+            },
+        );
+        let rows = scan(&catalog, &results, &request(&["d15"], false, "BD"));
+        assert_eq!(rows[0].dbn, "15K442S");
+        assert_eq!(
+            rows[0].scores.map(|s| s.ela_proficient_pct),
+            Some(Some(71.5))
+        );
+        let none = scan(
+            &catalog,
+            &TestResults::new(),
+            &request(&["d15"], false, "BD"),
+        );
+        assert_eq!(none[0].scores, None);
+    }
+
+    #[test]
     fn scan_uses_the_frl_slice_when_requested() {
         let d15 = PriorityCriterion::District(DistrictCode::parse("15").expect("valid"));
         let catalog = vec![program(
@@ -655,10 +1097,18 @@ mod tests {
                 },
             }],
         )];
-        let frl = scan(&catalog, &request(&["d15"], true, "BD"));
+        let frl = scan(
+            &catalog,
+            &TestResults::new(),
+            &request(&["d15"], true, "BD"),
+        );
         assert_eq!(frl[0].group_applied, Some(50));
         assert_eq!(frl[0].reach, Reach::Likely);
-        let non_frl = scan(&catalog, &request(&["d15"], false, "BD"));
+        let non_frl = scan(
+            &catalog,
+            &TestResults::new(),
+            &request(&["d15"], false, "BD"),
+        );
         assert_eq!(non_frl[0].group_applied, Some(370));
         assert_eq!(non_frl[0].reach, Reach::No);
     }

@@ -33,9 +33,17 @@ pub enum Command {
     /// List every catalog program the student is eligible for, most
     /// reachable first.
     Scan(ScanArgs),
-    /// Download the MySchools middle school catalog to a JSON file.
+    /// Download the MySchools middle school catalog into the database.
     Fetch(FetchArgs),
-    /// Serve the web interface.
+    /// Download state test results per school from NYC Open Data into the
+    /// database.
+    FetchScores(FetchScoresArgs),
+    /// Store the hand-entered programs and form defaults from the seed
+    /// files in the database.
+    Import(ImportArgs),
+    /// Import the seeds and download whatever the database is missing.
+    Bootstrap(BootstrapArgs),
+    /// Serve the web interface from the database.
     Serve(ServeArgs),
 }
 
@@ -105,8 +113,7 @@ pub struct SimArgs {
 
 #[derive(Debug, Args)]
 pub struct ScanArgs {
-    /// MySchools catalog JSON.
-    #[arg(default_value = "data/myschools_d15_d20.json")]
+    /// MySchools catalog JSON file, as written by the Python fetcher.
     pub data: PathBuf,
     /// The student is FRL, ELL, or STH eligible.
     #[arg(long)]
@@ -122,14 +129,52 @@ pub struct ScanArgs {
     pub csv: Option<PathBuf>,
 }
 
+/// PostgreSQL connection, shared by every command that touches the store.
+#[derive(Debug, Args)]
+pub struct DatabaseArgs {
+    /// PostgreSQL connection URL. Migrations run on connect.
+    #[arg(long, env = "DATABASE_URL")]
+    pub database_url: String,
+}
+
 #[derive(Debug, Args)]
 pub struct FetchArgs {
-    /// Output file.
-    #[arg(default_value = "myschools_ms.json")]
-    pub out: PathBuf,
     /// Comma-separated district codes, or `all`.
-    #[arg(long, default_value = "15,20")]
+    #[arg(long, default_value = "all")]
     pub districts: String,
+    #[command(flatten)]
+    pub database: DatabaseArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct FetchScoresArgs {
+    #[command(flatten)]
+    pub database: DatabaseArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct ImportArgs {
+    /// Hand-entered program definitions.
+    #[arg(long, default_value = "data/programs.json")]
+    pub programs: PathBuf,
+    /// Defaults that prefill the web form.
+    #[arg(long, default_value = "data/student.json")]
+    pub student: PathBuf,
+    #[command(flatten)]
+    pub database: DatabaseArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct BootstrapArgs {
+    #[arg(long, default_value = "data/programs.json")]
+    pub programs: PathBuf,
+    #[arg(long, default_value = "data/student.json")]
+    pub student: PathBuf,
+    /// Districts to download when the catalog is missing.
+    #[arg(long, default_value = "all")]
+    pub districts: String,
+    #[command(flatten)]
+    pub database: DatabaseArgs,
 }
 
 #[derive(Debug, Args)]
@@ -138,20 +183,8 @@ pub struct ServeArgs {
     /// authentication in front; every endpoint is anonymous.
     #[arg(long, default_value = "127.0.0.1:8080")]
     pub bind: String,
-    #[arg(long, default_value = "data/programs.json")]
-    pub programs: PathBuf,
-    /// Student file whose values prefill the form.
-    #[arg(long, default_value = "data/student.json")]
-    pub student: PathBuf,
-    #[arg(long, default_value = "data/myschools_d15_d20.json")]
-    pub catalog: PathBuf,
-    /// Number of runs kept in memory when no database is configured.
-    #[arg(long, default_value_t = 100)]
-    pub max_runs: usize,
-    /// PostgreSQL connection URL. When set, runs are stored in PostgreSQL
-    /// and migrations run at startup; otherwise runs stay in memory.
-    #[arg(long, env = "DATABASE_URL")]
-    pub database_url: Option<String>,
+    #[command(flatten)]
+    pub database: DatabaseArgs,
 }
 
 /// Applies the `sim` overrides to the student file and validates the result.
@@ -295,7 +328,15 @@ mod tests {
 
     #[test]
     fn scan_request_parses_attributes_and_lottery() {
-        let cli = parse(&["scan", "--attrs", "d15, d20", "--lottery", "b0", "--frl"]);
+        let cli = parse(&[
+            "scan",
+            "catalog.json",
+            "--attrs",
+            "d15, d20",
+            "--lottery",
+            "b0",
+            "--frl",
+        ]);
         let Command::Scan(args) = cli.command else {
             panic!("expected scan");
         };

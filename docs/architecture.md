@@ -26,11 +26,23 @@ For a simulation request through the web interface:
 
 For the catalog scan, `adapters::http::scan_page` calls
 `application::ScanCatalog::execute`, which calls the pure `domain::scan`.
-The catalog is loaded once at startup by `adapters::myschools::load_catalog`.
+The catalog is read once at startup from the database
+(`application::LoadReferenceData` through the `CatalogStore` port,
+implemented by `adapters::PostgresReferenceData`) and parsed by
+`adapters::myschools::catalog_from_documents`.
 
-For the catalog download, `composition::run_fetch` calls
-`application::DownloadCatalog`, whose port `CatalogDownloader` is
-implemented by `adapters::MySchoolsApiClient`.
+For a refresh, `composition::run_fetch` calls
+`application::RefreshCatalog`, which downloads through the
+`CatalogDownloader` port (`adapters::MySchoolsApiClient`) and stores
+through the `CatalogStore` port (`adapters::PostgresReferenceData`).
+`RefreshTestResults` does the same with `TestResultsDownloader`
+(`adapters::NycOpenDataClient`) and `TestResultsStore`. `ImportSeeds`
+stores the seed files through `ProgramStore` and `StudentDefaultsStore`.
+See [ADR 0004](decisions/0004-reference-data-in-postgres.md).
+
+At startup `composition::simulation_programs` derives the simulation's
+programs from the catalog (`domain::programs_from_catalog`) and merges the
+hand-entered programs on top.
 
 ## Modules
 
@@ -42,6 +54,9 @@ implemented by `adapters::MySchoolsApiClient`.
 | `adapters::json_files` | Loads `programs.json` and `student.json`. |
 | `adapters::myschools` | Parses the MySchools catalog and its prose. |
 | `adapters::myschools_api` | Downloads the catalog over HTTPS. |
+| `adapters::open_data` | Downloads state test results from NYC Open Data. |
+| `adapters::test_results` | Reads and writes a results CSV for offline tools. |
+| `adapters::postgres_reference` | PostgreSQL store of the catalog, results, programs, and defaults. |
 | `adapters::in_memory_runs` | Bounded in-process run store. |
 | `adapters::postgres_runs` | PostgreSQL run store through SQLx. |
 | `adapters::http` | Axum routes, Askama pages, JSON API. |
@@ -58,9 +73,9 @@ and `thiserror`.
 
 Use cases take adapter type parameters bounded by port traits
 ([REAS-ARCH-006](https://github.com/abenamer/reas/blob/main/standard/ports-and-adapters.md#reas-arch-006)).
-`composition::run_serve` selects `PostgresRunRepository` when
-`DATABASE_URL` is set and `InMemoryRunRepository` otherwise, then calls
-the generic `serve_with`, so both stores use static dispatch.
+`composition::run_serve` uses `PostgresRunRepository`; the HTTP tests
+build the same router with `InMemoryRunRepository` through the generic
+`build_state`, so both use static dispatch.
 `RunRepository` uses the `async_trait` macro, which supplies boxed `Send`
 futures; see [ADR 0002](decisions/0002-run-store-and-postgres.md).
 

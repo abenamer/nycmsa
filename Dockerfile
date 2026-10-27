@@ -15,12 +15,14 @@ RUN apt-get update \
  && useradd --system --uid 10001 --home /app nycmsa
 WORKDIR /app
 COPY --from=build /src/target/release/nycmsa /usr/local/bin/nycmsa
-COPY data ./data
+# Seed files only: the catalog and test results are downloaded into
+# PostgreSQL by `nycmsa bootstrap`.
+COPY data/programs.json data/student.json ./data/
 USER nycmsa
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
   CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1
 # Inside the container the server must bind all interfaces; Compose maps the
-# port to loopback on the host. DATABASE_URL selects PostgreSQL storage.
+# port to loopback on the host. DATABASE_URL is required.
 ENTRYPOINT ["nycmsa"]
 CMD ["serve", "--bind", "0.0.0.0:8080"]

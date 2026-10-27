@@ -15,8 +15,8 @@ use serde::Deserialize;
 
 use crate::domain::catalog::InvalidDistrictCode;
 use crate::domain::{
-    CatalogGroup, CatalogProgram, DemandPair, DistrictCode, GroupDemandText, InvalidProgramCode,
-    PriorityCriterion, ProgramCode,
+    Borough, CatalogGroup, CatalogProgram, DemandPair, DistrictCode, GroupDemandText,
+    InvalidProgramCode, PriorityCriterion, ProgramCode,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -55,6 +55,8 @@ struct SchoolEntryDto {
 #[derive(Debug, Deserialize)]
 struct SchoolDto {
     name: String,
+    #[serde(default)]
+    dbn: String,
     district: Option<DistrictDto>,
 }
 
@@ -114,9 +116,27 @@ pub fn load_catalog(path: &Path) -> Result<Vec<CatalogProgram>, CatalogLoadError
 /// Parses the MySchools JSON array of schools.
 pub fn parse_catalog(text: &str) -> Result<Vec<CatalogProgram>, CatalogLoadError> {
     let schools: Vec<SchoolEntryDto> = serde_json::from_str(text)?;
+    catalog_from_entries(schools)
+}
+
+/// Builds the catalog from the stored school documents.
+pub fn catalog_from_documents(
+    documents: &[serde_json::Value],
+) -> Result<Vec<CatalogProgram>, CatalogLoadError> {
+    let schools = documents
+        .iter()
+        .map(|d| serde_json::from_value::<SchoolEntryDto>(d.clone()))
+        .collect::<Result<Vec<_>, _>>()?;
+    catalog_from_entries(schools)
+}
+
+fn catalog_from_entries(
+    schools: Vec<SchoolEntryDto>,
+) -> Result<Vec<CatalogProgram>, CatalogLoadError> {
     let mut programs = Vec::new();
     for school in schools {
         let school_name = school.school.name;
+        let dbn = school.school.dbn.trim().to_uppercase();
         let raw_code = school
             .school
             .district
@@ -154,6 +174,7 @@ pub fn parse_catalog(text: &str) -> Result<Vec<CatalogProgram>, CatalogLoadError
                 .collect();
             programs.push(CatalogProgram::new(
                 district.clone(),
+                dbn.clone(),
                 title_case(before_parenthesis(&school_name)),
                 code,
                 before_parenthesis(&entry.name).to_owned(),
@@ -205,7 +226,7 @@ static OFFERS: LazyLock<Regex> = LazyLock::new(|| {
 static SENTENCE_BREAK: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\.\s+").expect("valid regex"));
 static DISTRICT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"district (\d+)").expect("valid regex"));
+    LazyLock::new(|| Regex::new(r"\bdistrict (\d+)|\bd(\d+)\b").expect("valid regex"));
 
 /// The first quantity phrase in lowercase text: "about N" gives `N`, "fewer
 /// than 10" gives `5`.
@@ -285,13 +306,23 @@ pub fn classify_group_name(name: &str) -> PriorityCriterion {
     }
     if let Some(code) = DISTRICT
         .captures(&n)
-        .and_then(|c| c.get(1))
+        .and_then(|c| c.get(1).or_else(|| c.get(2)))
         .and_then(|m| DistrictCode::parse(m.as_str()).ok())
     {
         return PriorityCriterion::District(code);
     }
     if n.contains("district") {
         return PriorityCriterion::Unrecognized;
+    }
+    let boroughs = [
+        ("staten island", Borough::StatenIsland),
+        ("manhattan", Borough::Manhattan),
+        ("bronx", Borough::Bronx),
+        ("brooklyn", Borough::Brooklyn),
+        ("queens", Borough::Queens),
+    ];
+    if let Some((_, borough)) = boroughs.iter().find(|(needle, _)| n.contains(needle)) {
+        return PriorityCriterion::Borough(*borough);
     }
     if n.contains("new york city") || n.contains("nyc") || n.contains("open to") {
         return PriorityCriterion::AnyNycResident;
@@ -412,7 +443,7 @@ mod tests {
         );
         assert_eq!(
             classify_group_name("Then to Brooklyn students"),
-            PriorityCriterion::Unrecognized
+            PriorityCriterion::Borough(Borough::Brooklyn)
         );
     }
 
@@ -432,7 +463,7 @@ mod tests {
     #[test]
     fn parse_catalog_reads_a_minimal_document() {
         let json = r#"[{
-          "school": {"name": "J.H.S. 062 DITMAS (20K062)", "district": {"code": "20"}},
+          "school": {"name": "J.H.S. 062 DITMAS (20K062)", "dbn": "20K062", "district": {"code": "20"}},
           "programs": [{
             "program": {"code": "K062Z"},
             "name": "Zoned Program (K062Z)",
@@ -448,6 +479,7 @@ mod tests {
         assert_eq!(catalog.len(), 1);
         let program = &catalog[0];
         assert_eq!(program.school_name, "J.H.S. 062 Ditmas");
+        assert_eq!(program.dbn, "20K062");
         assert_eq!(program.program_name, "Zoned Program");
         assert_eq!(program.method, "Zone Priority");
         assert_eq!(program.seats, Some(209));
@@ -467,11 +499,13 @@ mod tests {
     }
 
     #[test]
-    fn the_bundled_catalogs_load() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("data");
-        let d15_d20 = load_catalog(&dir.join("myschools_d15_d20.json")).expect("loads");
+    fn the_fixture_catalog_loads() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/myschools_d15_d20.json");
+        let d15_d20 = load_catalog(&path).expect("loads");
         assert!(d15_d20.len() > 50, "{}", d15_d20.len());
-        let all = load_catalog(&dir.join("myschools_all.json")).expect("loads");
-        assert!(all.len() > d15_d20.len());
+        let text = std::fs::read_to_string(&path).expect("reads");
+        let documents: Vec<serde_json::Value> = serde_json::from_str(&text).expect("json");
+        assert_eq!(catalog_from_documents(&documents).expect("parses"), d15_d20);
     }
 }

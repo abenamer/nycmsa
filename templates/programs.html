@@ -2,7 +2,13 @@
 {% block title %}Last year's numbers{% endblock %}
 {% block content %}
 <h1>Last year's numbers</h1>
-<p class="muted">Seats and demand for each priority group, from MySchools. A child is placed in the first group that fits. Figures that were cut off in the screenshots are estimates. <a href="/api/programs">JSON</a></p>
+<p class="muted">Seats and demand for each priority group, from last year's admissions as reported on the MySchools website. A child is placed in the first group that fits. First-round offers are the DOE's figure where a program was entered by hand, and an estimate (seats filled in priority order) where it comes straight from the catalog. <a href="/api/programs">JSON</a></p>
+<p class="muted">Showing districts {{ shown_districts }}. Click a district to add or remove it.</p>
+<div class="chips">
+{% for l in district_links %}
+  <a class="chip-link{% if l.active %} active{% endif %}" href="{{ l.href }}">{{ l.label }}</a>
+{% endfor %}
+</div>
 {% for p in programs %}
 <h2>{{ p.name }} <span class="muted">· {{ p.code }} · {{ p.method }} · picks by {{ p.how }} · {{ p.seats }} seats, {{ p.applicants }} applicants</span></h2>
 {% if let Some(note) = p.note %}<p class="hint">{{ note }}</p>{% endif %}

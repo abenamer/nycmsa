@@ -5,14 +5,20 @@
 
 pub mod download;
 pub mod ports;
+pub mod reference;
 pub mod runs;
 pub mod scan;
 pub mod simulate;
 
-pub use download::{DistrictFilter, DownloadCatalog};
+pub use download::{DistrictFilter, DownloadCatalog, DownloadTestResults};
 pub use ports::{
-    CatalogDownloader, CatalogSnapshot, Clock, DownloadError, NewRun, RepositoryError, Run, RunId,
-    RunRepository,
+    CatalogDownloader, CatalogSnapshot, CatalogStore, Clock, DownloadError, NewRun, ProgramStore,
+    RepositoryError, Run, RunId, RunRepository, Stored, StudentDefaultsStore,
+    TestResultsDownloader, TestResultsSnapshot, TestResultsStore,
+};
+pub use reference::{
+    ImportSeeds, LoadReferenceData, ReferenceData, ReferenceError, RefreshCatalog,
+    RefreshTestResults,
 };
 pub use runs::RunQueries;
 pub use scan::ScanCatalog;

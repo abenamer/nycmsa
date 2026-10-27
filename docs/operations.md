@@ -17,17 +17,27 @@ tags: [operations, docker, postgresql]
 
 ## Run locally
 
-1. Build: `cargo build --release --locked`.
-2. Start: `./target/release/nycmsa serve`.
-3. Open `http://127.0.0.1:8080`.
+The server reads everything from PostgreSQL: runs, the catalog, the test
+results, the hand-entered programs, and the form defaults.
 
-Expected result: the log shows `listening; every endpoint is anonymous`
-and `GET /healthz` returns `ok`.
+1. Create a database and export its URL, for example
+   `export DATABASE_URL=postgres://nycmsa:secret@127.0.0.1/nycmsa`.
+2. Build: `cargo build --release --locked`.
+3. Fill the database: `./target/release/nycmsa bootstrap`. It applies the
+   migrations, stores `data/programs.json` and `data/student.json`,
+   downloads the MySchools catalog for all districts, and downloads the
+   state test results from NYC Open Data. It skips any set the database
+   already holds.
+4. Start: `./target/release/nycmsa serve`.
+5. Open `http://127.0.0.1:8080`.
 
-To keep runs across restarts, set `DATABASE_URL` before step 2, for
-example `postgres://nycmsa:secret@127.0.0.1/nycmsa`. The server applies
-the migrations in `migrations/` at startup and refuses to start when the
-database is unreachable.
+Expected result: the log shows `loaded reference data` with the counts,
+then `listening; every endpoint is anonymous`, and `GET /healthz` returns
+`ok`. The server refuses to start when the database is unreachable or
+lacks a reference set; the error names the missing set.
+
+Recovery: if `bootstrap` fails during a download, the sets stored before
+the failure stay. Run it again; it continues with the missing sets.
 
 ## Run the checks
 
@@ -61,10 +71,13 @@ them.
 2. Run `docker compose up --build -d`.
 3. Open `http://127.0.0.1:8080`.
 
-Expected result: `docker compose ps` lists `db` as healthy and `app` as
-running. The database files are in the named volume `nycmsa_pgdata`, so
-`docker compose down`, `docker compose up --build`, and image rebuilds
-keep the runs.
+Expected result: `docker compose ps` lists `db` as healthy, `init` as
+exited with code 0, and `app` as running. On the first start `init` runs
+`nycmsa bootstrap`, which downloads the catalog and the test results; it
+needs a route to `myschools.nyc` and `data.cityofnewyork.us` and takes a
+few minutes. The database files are in the named volume `nycmsa_pgdata`,
+so `docker compose down`, `docker compose up --build`, and image rebuilds
+keep every snapshot and run.
 
 Do not run `docker compose down -v` against data you must keep. The `-v`
 flag deletes the named volume. A volume is not a backup.
@@ -106,17 +119,33 @@ SQLx rejects a checksum change.
 
 ## Refresh the MySchools catalog
 
-1. Run `nycmsa fetch data/myschools_d15_d20.json --districts 15,20`, or
-   `--districts all` for the whole city.
-2. Restart the server with `--catalog` pointing at the new file.
+1. Run `nycmsa fetch` (with Compose: `docker compose run --rm init fetch`).
+2. Restart the server (`docker compose restart app`).
 
-Expected result: the scan page reports the new program count. The fetch
-pauses 500 ms between pages. It was not run from the development
-environment because that environment has no route to `myschools.nyc`;
-see the [self-audit](self-audit.md).
+Expected result: the command prints `stored a catalog snapshot of N
+schools`, and the server log shows the new count. The previous snapshot
+stays in the database. The fetch pauses 500 ms between pages.
 
-The simulation's `data/programs.json` is maintained by hand from the
-MySchools "Seats and Demand" figures and is not refreshed by `fetch`.
+The server derives the simulation's programs from this catalog. The
+hand-entered programs replace the derived entries of the same codes.
+
+## Refresh the state test results
+
+1. Run `nycmsa fetch-scores` (with Compose: `docker compose run --rm init fetch-scores`).
+2. Restart the server.
+
+Expected result: the command prints the number of schools and the source
+years, and the scan page shows ELA and Math columns. The datasets end at
+2023; later years appear on NYC Open Data when the DOE publishes them.
+
+## Update the hand-entered programs or the form defaults
+
+1. Edit `data/programs.json` or `data/student.json`.
+2. Run `nycmsa import` (with Compose: `docker compose run --rm init import`).
+3. Restart the server.
+
+Expected result: the command prints the number of programs stored. The
+previous set stays in the database.
 
 ## Hosting elsewhere
 

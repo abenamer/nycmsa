@@ -4,15 +4,26 @@
 //! port: the catalog has one source and the scan needs no test double beyond
 //! a `Vec` (REAS-ARCH-004).
 
-use crate::domain::{scan, CatalogProgram, DistrictCode, ScanRequest, ScanRow};
+use crate::domain::{scan, CatalogProgram, DistrictCode, ScanRequest, ScanRow, TestResults};
 
 pub struct ScanCatalog {
     catalog: Vec<CatalogProgram>,
+    results: TestResults,
 }
 
 impl ScanCatalog {
-    pub fn new(catalog: Vec<CatalogProgram>) -> Self {
-        Self { catalog }
+    pub fn new(catalog: Vec<CatalogProgram>, results: TestResults) -> Self {
+        Self { catalog, results }
+    }
+
+    /// The loaded catalog, in file order.
+    pub fn programs(&self) -> &[CatalogProgram] {
+        &self.catalog
+    }
+
+    /// Number of schools with test results.
+    pub fn schools_with_scores(&self) -> usize {
+        self.results.len()
     }
 
     /// Number of programs in the loaded catalog.
@@ -35,6 +46,6 @@ impl ScanCatalog {
     }
 
     pub fn execute(&self, request: &ScanRequest) -> Vec<ScanRow> {
-        scan(&self.catalog, request)
+        scan(&self.catalog, &self.results, request)
     }
 }

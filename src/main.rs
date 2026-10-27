@@ -29,6 +29,15 @@ fn main() -> ExitCode {
         Command::Fetch(args) => {
             with_runtime(|| composition::run_fetch(&args)).map(|text| eprint!("{text}"))
         }
+        Command::FetchScores(args) => {
+            with_runtime(|| composition::run_fetch_scores(&args)).map(|text| eprint!("{text}"))
+        }
+        Command::Import(args) => {
+            with_runtime(|| composition::run_import(&args)).map(|text| eprint!("{text}"))
+        }
+        Command::Bootstrap(args) => {
+            with_runtime(|| composition::run_bootstrap(&args)).map(|text| eprint!("{text}"))
+        }
         Command::Serve(args) => with_runtime(|| composition::run_serve(&args)),
     };
     match outcome {

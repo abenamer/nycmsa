@@ -5,3 +5,5 @@ scripts
 tests
 .github
 *.md
+data/myschools_*.json
+data/school_test_results.csv

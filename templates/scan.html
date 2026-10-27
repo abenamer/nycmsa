@@ -2,7 +2,7 @@
 {% block title %}Which schools?{% endblock %}
 {% block content %}
 <h1>Which programs could we get into?</h1>
-<p class="muted">Every program in the MySchools catalog that your child is eligible for ({{ catalog_size }} programs loaded), ranked by how reachable it was last year for families like yours.</p>
+<p class="muted">Every program in the MySchools catalog that your child is eligible for ({{ catalog_size }} programs loaded), ranked by how reachable it was last year for families like yours. All figures are <strong>last year's admissions numbers as reported on the MySchools website</strong>.</p>
 {% if let Some(message) = error %}<div class="error">{{ message }}</div>{% endif %}
 <form method="get" action="/scan">
   <fieldset>
@@ -10,10 +10,10 @@
     <input type="text" name="lottery" value="{{ lottery }}" placeholder="for example BD" maxlength="32" autocomplete="off">
   </fieldset>
   <fieldset>
-    <legend>Where do you live?</legend>
+    <legend>Which school district do you live in?</legend>
     <div class="chips">
     {% for c in district_chips %}
-      <label class="chip"><input type="checkbox" name="attr" value="{{ c.value }}"{% if c.checked %} checked{% endif %}><span>{{ c.label }}</span></label>
+      <label class="chip"><input type="checkbox" name="attr" value="{{ c.value }}"{% if c.checked %} checked{% endif %}><span>{{ c.label }} <small class="muted">{{ c.borough }}</small></span></label>
     {% endfor %}
     </div>
   </fieldset>
@@ -31,25 +31,57 @@
 </form>
 {% if let Some(line) = lottery_line %}<p>{{ line }} {% if !csv_url.is_empty() %}<a href="{{ csv_url }}">Download as a spreadsheet (CSV)</a>{% endif %}</p>{% endif %}
 {% if !rows.is_empty() %}
-<table>
+<p class="hint">Click a column heading to sort. {{ scores_line }}</p>
+<table class="sortable">
   <thead>
-    <tr><th>School / program</th><th>District</th><th>Picks by</th><th class="num">Seats</th><th class="num">Applicants</th><th>Your priority group</th><th>Last year, in your group</th><th>Outlook</th></tr>
+    <tr><th>School / program</th><th>District</th><th>Picks by</th><th class="num">Seats</th><th class="num">Applicants</th><th>Your priority group</th><th>Last year, in your group</th><th>Outlook</th><th class="num">ELA</th><th class="num">Math</th></tr>
   </thead>
   <tbody>
   {% for r in rows %}
     <tr>
       <td>{{ r.school }}<div class="hint">{{ r.program }} · <code>{{ r.code }}</code></div></td>
-      <td>{{ r.district }}</td>
+      <td data-v="{{ r.district }}">{{ r.district }}</td>
       <td>{{ r.method }}</td>
-      <td class="num">{{ r.seats }}</td>
-      <td class="num">{{ r.applicants }}</td>
+      <td class="num" data-v="{{ r.seats }}">{{ r.seats }}</td>
+      <td class="num" data-v="{{ r.applicants }}">{{ r.applicants }}</td>
       <td>{{ r.group }}</td>
-      <td>{{ r.last_year }}</td>
-      <td><span class="badge {{ r.outlook_class }}">{{ r.outlook }}</span></td>
+      <td data-v="{{ r.share_sort }}">{{ r.last_year }}</td>
+      <td data-v="{{ r.outlook_sort }}"><span class="badge {{ r.outlook_class }}">{{ r.outlook }}</span></td>
+      <td class="num" data-v="{{ r.ela_sort }}">{{ r.ela }}</td>
+      <td class="num" data-v="{{ r.math_sort }}">{{ r.math }}</td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
 <p class="hint">"Got offers" counts waitlist offers too. Programs that pick by a screen, audition, or test don't depend on the lottery number.</p>
+<script>
+document.querySelectorAll('table.sortable th').forEach(function (th, index) {
+  th.title = 'Click to sort';
+  th.addEventListener('click', function () {
+    var table = th.closest('table');
+    var body = table.tBodies[0];
+    var direction = th.getAttribute('data-dir') === 'asc' ? 'desc' : 'asc';
+    table.querySelectorAll('th').forEach(function (h) { h.removeAttribute('data-dir'); });
+    th.setAttribute('data-dir', direction);
+    var value = function (row) {
+      var cell = row.cells[index];
+      var raw = cell.getAttribute('data-v');
+      if (raw === null) { return cell.textContent.trim().toLowerCase(); }
+      var number = parseFloat(raw);
+      return isNaN(number) ? null : number;
+    };
+    var rows = Array.prototype.slice.call(body.rows);
+    rows.sort(function (a, b) {
+      var x = value(a), y = value(b);
+      if (x === null && y === null) { return 0; }
+      if (x === null) { return 1; }
+      if (y === null) { return -1; }
+      if (typeof x === 'number' && typeof y === 'number') { return direction === 'asc' ? x - y : y - x; }
+      return direction === 'asc' ? String(x).localeCompare(String(y)) : String(y).localeCompare(String(x));
+    });
+    rows.forEach(function (row) { body.appendChild(row); });
+  });
+});
+</script>
 {% endif %}
 {% endblock %}

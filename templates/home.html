@@ -2,7 +2,8 @@
 {% block title %}Your chances{% endblock %}
 {% block content %}
 <h1>What are our chances?</h1>
-<p class="muted">Answer a few questions and we replay last year's middle school admissions 200,000 times with your child's number. You get one chance of an offer for each program on your list.</p>
+<p class="muted">Answer a few questions and we replay the middle school admissions lottery 200,000 times with your child's number. You get one chance of an offer for each program on your list.</p>
+<p class="muted">Everything here uses <strong>last year's admissions numbers as reported on the MySchools website</strong>: seats, applicants, and offers for each priority group. This year's seats, applicants, and rules can differ.</p>
 {% if let Some(message) = error %}<div class="error">{{ message }}</div>{% endif %}
 <form method="post" action="/simulate">
   <fieldset>
@@ -18,23 +19,41 @@
       <label class="chip"><input type="radio" name="talent_test" value="{{ c.value }}"{% if c.checked %} checked{% endif %}><span>{{ c.label }}</span></label>
     {% endfor %}
     </div>
-    <div class="hint">Only matters for programs that pick students by a test, such as Mark Twain.</div>
+    <div class="hint">Only matters for programs that pick students by a test or screen.</div>
   </fieldset>
 
   <fieldset>
-    <legend>Which of these apply to your child?</legend>
+    <legend>Which school district do you live in?</legend>
     <div class="chips">
-    {% for c in form.attribute_chips %}
-      <label class="chip"><input type="checkbox" name="attribute" value="{{ c.value }}"{% if c.checked %} checked{% endif %}><span>{{ c.label }}</span></label>
+    {% for c in form.district_chips %}
+      <label class="chip"><input type="checkbox" name="attribute" value="{{ c.value }}"{% if c.checked %} checked{% endif %}><span>{{ c.label }} <small class="muted">{{ c.borough }}</small></span></label>
     {% endfor %}
     </div>
-    <div class="hint">Schools give priority to some families first. Your child is placed in the first priority group that fits.</div>
+    <div class="hint">Pick every district that applies, for example where you live and where your child goes to school now. Your district is on your address lookup at schools.nyc.gov.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Does this apply to your family?</legend>
+    <div class="chips">
+      <label class="chip"><input type="checkbox" name="attribute" value="frl"{% if form.frl %} checked{% endif %}><span>Free or reduced-price lunch, English learner, or temporary housing</span></label>
+    </div>
+    <div class="hint">Many schools set aside seats for these families (Diversity in Admissions).</div>
   </fieldset>
 
   <fieldset>
     <legend>Which programs are you ranking, in order?</legend>
     <input type="text" name="ranking" value="{{ form.ranking }}" required>
-    <div class="hint">Program codes, best first, separated by commas. The codes are in the list below.</div>
+    <div class="hint">Program codes, best first, separated by commas. Find the codes in the list below.</div>
+    <details>
+      <summary class="muted">Siblings, zones, and continuing students</summary>
+      <div class="hint">Schools give priority to these families first. Enter program codes, separated by commas.</div>
+      <label>Programs where a sibling will be enrolled next year</label>
+      <input type="text" name="sibling_codes" value="{{ form.sibling_codes }}" placeholder="for example K442S">
+      <label>Programs your child is zoned for</label>
+      <input type="text" name="zoned_codes" value="{{ form.zoned_codes }}" placeholder="for example K062Z">
+      <label>Programs your child already attends (continuing student)</label>
+      <input type="text" name="continuing_codes" value="{{ form.continuing_codes }}" placeholder="for example K686A">
+    </details>
   </fieldset>
 
   <fieldset>
@@ -59,11 +78,17 @@
 </form>
 
 <h2>Program codes</h2>
+<p class="muted">Showing districts {{ shown_districts }}. Click a district to add or remove it.</p>
+<div class="chips">
+{% for l in district_links %}
+  <a class="chip-link{% if l.active %} active{% endif %}" href="{{ l.href }}">{{ l.label }}</a>
+{% endfor %}
+</div>
 <table>
-  <thead><tr><th>Code</th><th>Program</th><th>Picks students by</th></tr></thead>
+  <thead><tr><th>Code</th><th>District</th><th>Program</th><th>Picks students by</th></tr></thead>
   <tbody>
   {% for p in programs %}
-    <tr><td><code>{{ p.code }}</code></td><td>{{ p.name }}</td><td>{{ p.how }}</td></tr>
+    <tr><td><code>{{ p.code }}</code></td><td>{{ p.district }}</td><td>{{ p.name }}</td><td>{{ p.how }}</td></tr>
   {% endfor %}
   </tbody>
 </table>

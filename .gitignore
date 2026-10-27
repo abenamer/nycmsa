@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 .venv/
+# Downloaded snapshots live in PostgreSQL; see docs/operations.md
+/data/myschools_*.json
+/data/school_test_results.csv

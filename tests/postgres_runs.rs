@@ -81,7 +81,10 @@ async fn runs_round_trip_through_postgres() {
     let expected = new_run(seed);
     assert_eq!(found.id, first);
     assert_eq!(found.created_at, expected.created_at);
-    assert_eq!(found.student, expected.student);
+    // Reading validates the document again, which adds the borough attribute.
+    let mut expected_student = expected.student.clone();
+    expected_student.attributes = nycmsa::domain::with_boroughs(expected_student.attributes);
+    assert_eq!(found.student, expected_student);
     assert_eq!(found.report, expected.report);
 
     let recent = repo.recent(2).await.expect("reads");

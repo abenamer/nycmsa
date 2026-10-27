@@ -8,15 +8,14 @@ use time::OffsetDateTime;
 use crate::adapters::cli::render::{pct0, thousands};
 use crate::adapters::dto::StudentDto;
 use crate::application::Run;
+use crate::application::{Clock, RunRepository};
 use crate::domain::{
-    DistrictCode, ProgramDefinitions, ProgramRow, Reach, ScanRequest, ScanRow, SelectionKind,
-    WaitlistNumbers,
+    Borough, DistrictCode, ProgramDefinitions, ProgramRow, Reach, ScanRequest, ScanRow,
+    SelectionKind, WaitlistNumbers,
 };
 
-use super::choices::{
-    attribute_chips, attribute_label, OutlookChoice, TalentTestChoice, WaitlistChoice,
-};
-use super::{ScanQuery, SimulateForm};
+use super::choices::{attribute_label, OutlookChoice, TalentTestChoice, WaitlistChoice};
+use super::{AppState, ScanQuery, SimulateForm};
 
 /// `2026-10-26T19:40:00Z`, or the raw seconds when formatting fails.
 pub fn format_time(time: std::time::SystemTime) -> String {
@@ -56,22 +55,60 @@ fn chips<T: Copy + PartialEq>(
         .collect()
 }
 
+/// A district chip: `District 15`, grouped by borough on the page.
+pub struct DistrictChip {
+    pub value: String,
+    pub label: String,
+    pub borough: &'static str,
+    pub checked: bool,
+}
+
+fn district_chips(districts: &[DistrictCode], selected: &[String]) -> Vec<DistrictChip> {
+    districts
+        .iter()
+        .map(|d| {
+            let value = d.resident_attribute().as_str().to_owned();
+            DistrictChip {
+                label: format!("District {d}"),
+                borough: d.borough().map_or("Other", Borough::name),
+                checked: selected.contains(&value),
+                value,
+            }
+        })
+        .collect()
+}
+
+/// Program codes from the `<prefix>_<code>` attributes, comma-joined.
+fn codes_with_prefix(attributes: &[String], prefix: &str) -> String {
+    attributes
+        .iter()
+        .filter_map(|a| a.strip_prefix(prefix))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Values shown in the simulate form.
 pub struct FormValues {
     pub ranking: String,
     pub lottery_number: String,
-    pub attribute_chips: Vec<Chip>,
+    pub district_chips: Vec<DistrictChip>,
+    pub frl: bool,
+    pub sibling_codes: String,
+    pub zoned_codes: String,
+    pub continuing_codes: String,
     pub talent_chips: Vec<Chip>,
     pub waitlist_chips: Vec<Chip>,
     pub outlook_chips: Vec<Chip>,
 }
 
 impl FormValues {
+    #[allow(clippy::too_many_arguments)]
     fn build(
-        definitions: &ProgramDefinitions,
+        districts: &[DistrictCode],
         ranking: String,
         lottery_number: String,
-        selected_attributes: &[String],
+        attributes: &[String],
+        code_fields: (String, String, String),
         talent: Option<TalentTestChoice>,
         waitlist: Option<WaitlistChoice>,
         outlook: Option<OutlookChoice>,
@@ -79,14 +116,11 @@ impl FormValues {
         Self {
             ranking,
             lottery_number,
-            attribute_chips: attribute_chips(definitions)
-                .into_iter()
-                .map(|a| Chip {
-                    label: attribute_label(&a, definitions),
-                    checked: selected_attributes.contains(&a),
-                    value: a,
-                })
-                .collect(),
+            district_chips: district_chips(districts, attributes),
+            frl: attributes.iter().any(|a| a == "frl"),
+            sibling_codes: code_fields.0,
+            zoned_codes: code_fields.1,
+            continuing_codes: code_fields.2,
             talent_chips: chips(
                 &TalentTestChoice::ALL,
                 TalentTestChoice::value,
@@ -108,13 +142,18 @@ impl FormValues {
         }
     }
 
-    pub fn from_student(student: &StudentDto, definitions: &ProgramDefinitions) -> Self {
+    pub fn from_student(student: &StudentDto, districts: &[DistrictCode]) -> Self {
         let took_test = student.attributes.iter().any(|a| a == "mark_twain_test");
         Self::build(
-            definitions,
+            districts,
             student.ranking.join(", "),
             student.lottery_number.clone().unwrap_or_default(),
             &student.attributes,
+            (
+                codes_with_prefix(&student.attributes, "sibling_"),
+                codes_with_prefix(&student.attributes, "zoned_"),
+                codes_with_prefix(&student.attributes, "continuing_"),
+            ),
             Some(TalentTestChoice::from_student(
                 took_test,
                 student.talent_test_percentile,
@@ -124,12 +163,17 @@ impl FormValues {
         )
     }
 
-    pub fn from_form(form: &SimulateForm, definitions: &ProgramDefinitions) -> Self {
+    pub fn from_form(form: &SimulateForm, districts: &[DistrictCode]) -> Self {
         Self::build(
-            definitions,
+            districts,
             form.ranking.clone(),
             form.lottery_number.clone(),
             &form.attributes,
+            (
+                form.sibling_codes.clone(),
+                form.zoned_codes.clone(),
+                form.continuing_codes.clone(),
+            ),
             TalentTestChoice::parse(&form.talent_test),
             WaitlistChoice::parse(&form.waitlist),
             OutlookChoice::parse(&form.outlook),
@@ -137,8 +181,55 @@ impl FormValues {
     }
 }
 
+/// A link that filters a list by district.
+pub struct FilterLink {
+    pub label: String,
+    pub href: String,
+    pub active: bool,
+}
+
+/// Builds one link per district, toggling it in the current selection.
+fn district_links(path: &str, districts: &[DistrictCode], selected: &[String]) -> Vec<FilterLink> {
+    districts
+        .iter()
+        .map(|d| {
+            let code = d.as_str().to_owned();
+            let active = selected.contains(&code);
+            let mut next: Vec<&String> = selected.iter().filter(|s| **s != code).collect();
+            if !active {
+                next.push(&code);
+            }
+            let query: Vec<String> = next.iter().map(|c| format!("district={c}")).collect();
+            FilterLink {
+                label: format!("District {code}"),
+                href: if query.is_empty() {
+                    format!("{path}?district=")
+                } else {
+                    format!("{path}?{}", query.join("&"))
+                },
+                active,
+            }
+        })
+        .collect()
+}
+
+/// The districts to show when the query names none: those of the default
+/// student.
+fn default_districts(student: &StudentDto) -> Vec<String> {
+    let mut districts: Vec<String> = student
+        .attributes
+        .iter()
+        .filter_map(|a| a.strip_prefix('d'))
+        .filter(|d| !d.is_empty() && d.chars().all(|c| c.is_ascii_digit()))
+        .map(str::to_owned)
+        .collect();
+    districts.sort_by_key(|d| d.parse::<u32>().unwrap_or(u32::MAX));
+    districts
+}
+
 pub struct ProgramOption {
     pub code: String,
+    pub district: String,
     pub name: String,
     pub how: &'static str,
 }
@@ -163,28 +254,52 @@ pub struct RecentRun {
 #[template(path = "home.html")]
 pub struct HomePage {
     pub form: FormValues,
+    pub district_links: Vec<FilterLink>,
     pub programs: Vec<ProgramOption>,
+    pub shown_districts: String,
     pub recent: Vec<RecentRun>,
     pub error: Option<String>,
 }
 
 impl HomePage {
-    pub fn new(
+    pub fn new<R, C>(
         form: FormValues,
-        definitions: &ProgramDefinitions,
+        state: &AppState<R, C>,
+        requested_districts: &[String],
         recent: &[Run],
         error: Option<String>,
-    ) -> Self {
+    ) -> Self
+    where
+        R: RunRepository,
+        C: Clock,
+    {
+        let districts = state.scan.districts();
+        let selected = if requested_districts.is_empty() {
+            default_districts(&state.default_student)
+        } else {
+            requested_districts.to_vec()
+        };
+        let definitions = state.simulate.default_programs();
+        let programs = state
+            .scan
+            .programs()
+            .iter()
+            .filter(|p| selected.contains(&p.district.as_str().to_owned()))
+            .filter_map(|p| {
+                let program = definitions.get(&p.code)?;
+                Some(ProgramOption {
+                    code: p.code.to_string(),
+                    district: p.district.to_string(),
+                    name: program.name().to_owned(),
+                    how: how_it_admits(program.selection()),
+                })
+            })
+            .collect();
         Self {
             form,
-            programs: definitions
-                .iter()
-                .map(|p| ProgramOption {
-                    code: p.code().to_string(),
-                    name: p.name().to_owned(),
-                    how: how_it_admits(p.selection()),
-                })
-                .collect(),
+            district_links: district_links("/", &districts, &selected),
+            programs,
+            shown_districts: selected.join(", "),
             recent: recent
                 .iter()
                 .map(|run| RecentRun {
@@ -448,19 +563,35 @@ pub struct ScanRowView {
     pub applicants: String,
     pub group: String,
     pub last_year: String,
+    /// Offer share as a number for sorting, empty when unknown.
+    pub share_sort: String,
     pub outlook: &'static str,
     pub outlook_class: &'static str,
+    /// Rank of the outlook for sorting: best first.
+    pub outlook_sort: u8,
+    pub ela: String,
+    pub ela_sort: String,
+    pub math: String,
+    pub math_sort: String,
 }
 
-fn outlook(reach: Reach) -> (&'static str, &'static str) {
+fn outlook(reach: Reach) -> (&'static str, &'static str, u8) {
     match reach {
-        Reach::AllOffered => ("Everyone in your group got in", "good"),
-        Reach::SeatsOpen => ("Seats were left open", "good"),
-        Reach::Likely => ("Good odds for your number", "likely"),
-        Reach::WaitlistMaybe => ("Maybe, via the waitlist", "maybe"),
-        Reach::No => ("Unlikely with your number", "no"),
-        Reach::ByScreen => ("Depends on the screen, not the lottery", "neutral"),
-        Reach::Unknown => ("No figures published", "neutral"),
+        Reach::AllOffered => ("Everyone in your group got in", "good", 0),
+        Reach::SeatsOpen => ("Seats were left open", "good", 1),
+        Reach::Likely => ("Good odds for your number", "likely", 2),
+        Reach::WaitlistMaybe => ("Maybe, via the waitlist", "maybe", 3),
+        Reach::ByScreen => ("Depends on the screen, not the lottery", "neutral", 4),
+        Reach::No => ("Unlikely with your number", "no", 5),
+        Reach::Unknown => ("No figures published", "neutral", 6),
+    }
+}
+
+/// `71.5` as `72%`, or empty when unknown.
+fn score(value: Option<f64>) -> (String, String) {
+    match value {
+        Some(v) => (format!("{}%", v.round() as i64), format!("{v}")),
+        None => (String::new(), String::new()),
     }
 }
 
@@ -473,10 +604,11 @@ fn opt(value: Option<u32>) -> String {
 pub struct ScanPage {
     pub lottery: String,
     pub frl: bool,
-    pub district_chips: Vec<Chip>,
+    pub district_chips: Vec<DistrictChip>,
     pub role_chips: Vec<Chip>,
     pub lottery_line: Option<String>,
     pub catalog_size: usize,
+    pub scores_line: String,
     pub rows: Vec<ScanRowView>,
     pub csv_url: String,
     pub error: Option<String>,
@@ -490,6 +622,7 @@ impl ScanPage {
         result: Option<(&ScanRequest, &[ScanRow])>,
         districts: &[DistrictCode],
         catalog_size: usize,
+        schools_with_scores: usize,
         error: Option<String>,
     ) -> Self {
         let definitions = ProgramDefinitions::default();
@@ -498,17 +631,16 @@ impl ScanPage {
             .iter()
             .flat_map(|a| a.split(',').map(|s| s.trim().to_owned()))
             .collect();
-        let district_chips = districts
-            .iter()
-            .map(|d| {
-                let value = d.resident_attribute().as_str().to_owned();
-                Chip {
-                    label: attribute_label(&value, &definitions),
-                    checked: selected.contains(&value),
-                    value,
-                }
-            })
-            .collect();
+        let district_chips = district_chips(districts, &selected);
+        let scores_year =
+            result.and_then(|(_, rows)| rows.iter().find_map(|r| r.scores.map(|s| s.year)));
+        let scores_line = match (schools_with_scores, scores_year) {
+            (0, _) => "No state test results are loaded; run `nycmsa fetch-scores`.".to_owned(),
+            (_, Some(year)) => format!(
+                "ELA and Math show the share of the school's students at proficiency (levels 3 and 4) on the {year} New York State tests, from NYC Open Data. Blank means the DOE suppressed the figure or did not report it."
+            ),
+            (_, None) => "State test results are loaded but none of these schools has a figure.".to_owned(),
+        };
         let role_chips = ROLE_ATTRIBUTES
             .iter()
             .map(|a| Chip {
@@ -544,6 +676,7 @@ impl ScanPage {
             role_chips,
             lottery_line,
             catalog_size,
+            scores_line,
             rows,
             csv_url,
             error,
@@ -551,7 +684,9 @@ impl ScanPage {
     }
 
     fn row(r: &ScanRow) -> ScanRowView {
-        let (outlook, outlook_class) = outlook(r.reach);
+        let (outlook, outlook_class, outlook_sort) = outlook(r.reach);
+        let (ela, ela_sort) = score(r.scores.and_then(|s| s.ela_proficient_pct));
+        let (math, math_sort) = score(r.scores.and_then(|s| s.math_proficient_pct));
         let last_year = match (r.group_applied, r.group_offered) {
             (Some(applied), Some(offered)) => format!("{offered} of {applied} got offers"),
             (Some(applied), None) => format!("{applied} applied; offers not published"),
@@ -567,8 +702,14 @@ impl ScanPage {
             applicants: opt(r.applicants),
             group: r.group_name.clone(),
             last_year,
+            share_sort: r.group_share.map(|s| format!("{s}")).unwrap_or_default(),
             outlook,
             outlook_class,
+            outlook_sort,
+            ela,
+            ela_sort,
+            math,
+            math_sort,
         }
     }
 }
@@ -595,14 +736,37 @@ pub struct ProgramView {
 #[derive(Template)]
 #[template(path = "programs.html")]
 pub struct ProgramsPage {
+    pub district_links: Vec<FilterLink>,
+    pub shown_districts: String,
     pub programs: Vec<ProgramView>,
 }
 
 impl ProgramsPage {
-    pub fn new(definitions: &ProgramDefinitions) -> Self {
+    pub fn new<R, C>(state: &AppState<R, C>, requested_districts: &[String]) -> Self
+    where
+        R: RunRepository,
+        C: Clock,
+    {
+        let districts = state.scan.districts();
+        let selected = if requested_districts.is_empty() {
+            default_districts(&state.default_student)
+        } else {
+            requested_districts.to_vec()
+        };
+        let definitions = state.simulate.default_programs();
+        let in_district: std::collections::BTreeSet<&crate::domain::ProgramCode> = state
+            .scan
+            .programs()
+            .iter()
+            .filter(|p| selected.contains(&p.district.as_str().to_owned()))
+            .map(|p| &p.code)
+            .collect();
         Self {
+            district_links: district_links("/programs", &districts, &selected),
+            shown_districts: selected.join(", "),
             programs: definitions
                 .iter()
+                .filter(|p| in_district.contains(p.code()))
                 .map(|p| ProgramView {
                     code: p.code().to_string(),
                     name: p.name().to_owned(),

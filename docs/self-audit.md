@@ -53,6 +53,25 @@ working tree before commit.
 | `cargo test --workspace --locked` | Passed; see the counts in the commit message |
 | `python scripts/check_docs.py` and the checker tests | Passed |
 
+## Local evidence: 2026-10-27 (all districts, test scores, reference data in PostgreSQL)
+
+Same environment, PostgreSQL 16.15 local cluster. The network policy
+changed during the session: `myschools.nyc` and `data.cityofnewyork.us`
+became reachable.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt --all -- --check` | Passed |
+| `cargo clippy --workspace --all-targets -- -D warnings` | Passed |
+| `cargo test --workspace` | Passed: 94 unit tests, 13 HTTP adapter tests; 2 ignored (PostgreSQL) |
+| `cargo test --test postgres_runs --test postgres_reference -- --ignored` | Passed against the local server: run round trip; catalog, scores, programs, and defaults snapshots round trip with the latest snapshot winning |
+| `python scripts/check_docs.py` and the checker tests | Passed |
+| `nycmsa bootstrap` against the live sources | Passed in 1 m 52 s: 9 hand-entered programs and the defaults stored; catalog snapshot of 477 schools from the MySchools API (all districts); test results for 1,124 schools from NYC Open Data (ELA 2023, Math 2023). A second run reported that every set was present. |
+| `nycmsa serve` from that database | Passed: loaded the snapshots, built 662 simulation programs from 784 catalog programs, served the form, a simulation, and a District 21 scan with ELA and Math figures |
+| `nycmsa serve` against an empty database | Failed as designed: `no catalog snapshot in the database; run nycmsa bootstrap first` |
+| Comparison of the catalog scan with Python | No longer identical by design: borough priority groups now admit students; see the domain model |
+| `docker compose up` with the `init` service | Not run: no Docker daemon in the development container. The CI `docker` job builds the image and runs `sim` inside it; the Compose flow is unverified. |
+
 ## Remote evidence
 
 None yet. After the first push, record here the GitHub Actions run that

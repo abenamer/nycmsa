@@ -15,8 +15,12 @@ use nycmsa::adapters::{InMemoryRunRepository, SystemClock};
 use nycmsa::composition::{build_state, load_bundled};
 
 fn app() -> Router {
-    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("data");
-    let (programs, student, catalog) = load_bundled(&data).expect("bundled data loads");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let bundled = load_bundled(
+        &root.join("data"),
+        &root.join("tests/fixtures/myschools_d15_d20.json"),
+    )
+    .expect("bundled data loads");
     let limits = HttpLimits {
         cpu_permits: 2,
         ..HttpLimits::default()
@@ -24,9 +28,10 @@ fn app() -> Router {
     let state = build_state(
         InMemoryRunRepository::new(NonZeroUsize::new(10).expect("non-zero")),
         SystemClock,
-        programs,
-        student,
-        catalog,
+        bundled.programs,
+        bundled.student,
+        bundled.catalog,
+        bundled.results,
         &limits,
     );
     router(state, &limits)
@@ -63,7 +68,12 @@ async fn home_page_prefills_the_student_file() {
     let html = body_text(response).await;
     assert!(html.contains("value=\"BD\""), "lottery prefix prefilled");
     assert!(html.contains("K187A, K239SC"), "ranking prefilled");
-    assert!(html.contains("Lives in District 15"), "district chip");
+    assert!(html.contains("District 15"), "district chip");
+    assert!(html.contains("Brooklyn"), "borough shown on the chip");
+    assert!(
+        html.contains("K442S"),
+        "program codes for the student's districts"
+    );
     assert!(
         html.contains("value=\"d15\" checked"),
         "district chip checked from student.json"
@@ -255,7 +265,7 @@ async fn scan_csv_has_the_python_columns() {
         Some("text/csv; charset=utf-8")
     );
     let csv = body_text(response).await;
-    assert!(csv.starts_with("district,school,code,program,method,seats,applicants,filled,group,group_order,n_groups,your_group_applied,your_group_offered,your_group_share,reach\n"));
+    assert!(csv.starts_with("district,school,code,program,method,seats,applicants,filled,group,group_order,n_groups,your_group_applied,your_group_offered,your_group_share,reach,dbn,scores_year,ela_proficient_pct,math_proficient_pct\n"));
 }
 
 #[tokio::test]
@@ -272,8 +282,32 @@ async fn scan_page_reports_a_bad_lottery_prefix() {
 async fn programs_pages_list_the_definitions() {
     let response = app().oneshot(get("/programs")).await.expect("response");
     assert_eq!(response.status(), StatusCode::OK);
-    assert!(body_text(response).await.contains("K239SC"));
+    let html = body_text(response).await;
+    assert!(html.contains("K442S"), "districts 15 and 20 by default");
+    assert!(html.contains("Showing districts 15, 20"));
+    let response = app()
+        .oneshot(get("/programs?district=20"))
+        .await
+        .expect("response");
+    let html = body_text(response).await;
+    assert!(
+        html.contains("K062Z") && !html.contains("K442S"),
+        "district filter"
+    );
     let response = app().oneshot(get("/api/programs")).await.expect("response");
     let json: serde_json::Value = serde_json::from_str(&body_text(response).await).expect("json");
-    assert_eq!(json["programs"].as_object().expect("map").len(), 9);
+    let programs = json["programs"].as_object().expect("map");
+    assert!(
+        programs.len() > 50,
+        "derived from the catalog: {}",
+        programs.len()
+    );
+    assert_eq!(
+        programs["K442S"]["name"], "M.S. 442 School for Innovation",
+        "curated programs.json wins over the derived entry"
+    );
+    assert_eq!(
+        programs["K062Z"]["type"], "lottery",
+        "derived zoned program"
+    );
 }
