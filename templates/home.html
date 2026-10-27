@@ -22,12 +22,12 @@
   </div>
   <div>
     <label for="talent_test_percentile">Expected talent-test rank (%)</label>
-    <input type="number" id="talent_test_percentile" name="talent_test_percentile" value="{{ form.talent_test_percentile }}" min="0" max="100" step="0.1" placeholder="e.g. 10 = top tenth">
+    <input type="number" id="talent_test_percentile" name="talent_test_percentile" value="{{ form.talent_test_percentile }}" min="0" max="100" step="any" placeholder="e.g. 10 = top tenth">
     <div class="hint">0 = best test-taker, 100 = worst. Blank = unknown, drawn uniformly.</div>
   </div>
   <div>
     <label for="talent_test_sd">Talent-test spread (± percentage points)</label>
-    <input type="number" id="talent_test_sd" name="talent_test_sd" value="{{ form.talent_test_sd }}" min="0" max="100" step="0.1">
+    <input type="number" id="talent_test_sd" name="talent_test_sd" value="{{ form.talent_test_sd }}" min="0" max="100" step="any">
     <div class="hint">Trial-to-trial noise, so the two Mark Twain talent areas correlate without being identical.</div>
   </div>
   <div>
@@ -47,12 +47,12 @@
   </div>
   <div>
     <label for="demand_sd">Demand noise (log-normal sd)</label>
-    <input type="number" id="demand_sd" name="demand_sd" value="{{ form.demand_sd }}" min="0" step="0.01">
+    <input type="number" id="demand_sd" name="demand_sd" value="{{ form.demand_sd }}" min="0" step="any">
     <div class="hint">Year-to-year uncertainty on each program's offer rate.</div>
   </div>
   <div>
     <label for="attrition">Attrition multiplier</label>
-    <input type="number" id="attrition" name="attrition" value="{{ form.attrition }}" min="0.01" step="0.05">
+    <input type="number" id="attrition" name="attrition" value="{{ form.attrition }}" min="0.01" step="any">
     <div class="hint">1.0 = published rates. Higher is optimistic.</div>
   </div>
   <div><button type="submit">Run simulation</button></div>
