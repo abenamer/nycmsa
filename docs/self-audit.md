@@ -240,6 +240,8 @@ matches the heading. No Rust code changed outside the test.
 | `cargo fmt --all`, `cargo check --all-targets`, `cargo clippy --all-targets -- -D warnings` | Passed |
 | `cargo test` | 102 unit tests and 14 HTTP tests passed; the blank-home test asserts the heading and subheading |
 | `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+| Code review on pull request 11 (low) | No findings |
+| Security review on pull request 11 | No findings. The change is static text in `home.html` with no template expression, no new input and no new link, plus a test assertion |
 
 ## Remote evidence
 
