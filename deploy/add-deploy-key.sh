@@ -14,9 +14,11 @@ set -euo pipefail
 main() {
   local key=${1:?usage: add-deploy-key.sh '<public key>'}
   case "$key" in
+    *$'\n'*|*$'\r'*) echo "the key must be a single line" >&2; return 2 ;;
     ssh-ed25519\ *|ecdsa-sha2-*\ *|ssh-rsa\ *) ;;
     *) echo "that does not look like an SSH public key" >&2; return 2 ;;
   esac
+  ssh-keygen -lf /dev/stdin <<<"$key" >/dev/null || { echo "ssh-keygen cannot read that key" >&2; return 2; }
   if ! id -u deploy >/dev/null 2>&1; then
     useradd --system --create-home --home-dir /home/deploy --shell /bin/sh deploy
   fi
@@ -30,7 +32,8 @@ main() {
     > /home/deploy/.ssh/authorized_keys
   chown deploy:deploy /home/deploy/.ssh/authorized_keys
   chmod 0600 /home/deploy/.ssh/authorized_keys
-  printf 'deploy ALL=(root) NOPASSWD: /opt/nycmsa/update.sh\n' > /etc/sudoers.d/nycmsa-deploy
+  # The trailing "" allows the script only without arguments.
+  printf 'deploy ALL=(root) NOPASSWD: /opt/nycmsa/update.sh ""\n' > /etc/sudoers.d/nycmsa-deploy
   chmod 0440 /etc/sudoers.d/nycmsa-deploy
   visudo -cf /etc/sudoers.d/nycmsa-deploy >/dev/null
   local ip

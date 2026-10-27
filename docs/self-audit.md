@@ -281,6 +281,9 @@ that reports who ran it.
 | `update.sh` exiting 1 | ssh exits 1, so the job would fail |
 | `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
 | Not run | The `deploy` job itself against the Droplet (needs the secrets the owner adds) and `update.sh`'s refresh of a file that is new on the server |
+| Code review on pull request 12 (low) | No findings |
+| Security review on pull request 12 | No findings. Checked: a leaked deploy key can only trigger `update.sh` (forced command, `restrict`, root-owned script and directory, sudo's `env_reset`); the job runs only for pushes to `main` under `production` with no repository permissions and writes secrets through `printf` from the environment, never into the script text; the fetch from `main` already ran as root before this change. Three hardenings applied: the sudoers rule ends in `""` so only the argument-less call is allowed, the script rejects multi-line keys and runs `ssh-keygen -l` on the key, and the workflow passes `IdentitiesOnly=yes` |
+| Re-test after hardening | A two-line key and a garbage key are rejected (exit 2); the good key leaves one `authorized_keys` line; the workflow call still runs `update.sh` as root; `sudo -n /opt/nycmsa/update.sh evil` as `deploy` is refused |
 
 ## Remote evidence
 
