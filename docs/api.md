@@ -131,8 +131,8 @@ not FRL, and `BD`; the HTML page shows blank questions instead. The
 response lists the attributes, the FRL flag, the lottery prefix and
 fraction, and the rows in reach order. Each row also carries the school's
 `dbn`, `scores_year`, `ela_proficient_pct`, `math_proficient_pct`,
-`latitude`, and `longitude`.
-The CSV has the Python scanner's columns followed by those six.
+`latitude`, `longitude`, and `address`.
+The CSV has the Python scanner's columns followed by those seven.
 
 ## Command line
 
@@ -177,7 +177,10 @@ the city's GeoSearch service (`geosearch.planninglabs.nyc`, NYC
 Department of City Planning) and keeps the coordinates it gets back.
 This site's server never sees the address. Distances are straight lines
 computed in the browser from each school's coordinates, which the
-catalog carries. No cookie is set. There is no analytics, no
+catalog carries. Each school's address links to Google Maps, and a
+Directions link opens Google Maps transit directions with the school as
+the destination and no origin: the visitor's home is never put into a
+link, so it reaches Google only if the visitor types it there. No cookie is set. There is no analytics, no
 visitor statistics, and no third-party script. Every page's footer says
 so and has a "Forget everything this browser remembers" button that
 removes every `nycmsa.` key; the Reset buttons clear subsets.

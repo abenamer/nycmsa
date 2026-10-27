@@ -1,0 +1,2 @@
+{# The school's address as a Google Maps link, and transit directions to it. Both carry the school's location only. #}
+{% if !r.map_url.is_empty() %}<div class="hint"><a href="{{ r.map_url }}" target="_blank" rel="noopener noreferrer">{% if r.address.is_empty() %}Map{% else %}{{ r.address }}{% endif %}</a>{% if !r.directions_url.is_empty() %} · <a href="{{ r.directions_url }}" target="_blank" rel="noopener noreferrer">Directions</a>{% endif %}</div>{% endif %}

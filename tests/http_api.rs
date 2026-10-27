@@ -273,7 +273,7 @@ async fn scan_csv_has_the_python_columns() {
         Some("text/csv; charset=utf-8")
     );
     let csv = body_text(response).await;
-    assert!(csv.starts_with("district,school,code,program,method,seats,applicants,filled,group,group_order,n_groups,your_group_applied,your_group_offered,your_group_share,reach,dbn,scores_year,ela_proficient_pct,math_proficient_pct,latitude,longitude\n"));
+    assert!(csv.starts_with("district,school,code,program,method,seats,applicants,filled,group,group_order,n_groups,your_group_applied,your_group_offered,your_group_share,reach,dbn,scores_year,ela_proficient_pct,math_proficient_pct,latitude,longitude,address\n"));
 }
 
 #[tokio::test]
@@ -297,6 +297,13 @@ async fn picker_and_profiles_pages_render() {
         "school coordinates reach the picker rows"
     );
     assert!(html.contains("id=\"home-address\""), "the address box");
+    assert!(
+        html.contains("https://www.google.com/maps/search/?api=1&#38;query=40.")
+            && html.contains("travelmode=transit")
+            && !html.contains("origin="),
+        "map and directions links carry the school only: {html}"
+    );
+    assert!(html.contains("Brooklyn, NY"), "the school address is shown");
     assert!(html.contains("Dual language"), "focus chips");
     assert!(
         html.contains("guessed from the name"),
