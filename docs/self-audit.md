@@ -165,6 +165,17 @@ page carries the privacy note and a "forget everything" button.
 | Code review on pull request 4 | Eight findings, all applied: the scan page never substitutes a lottery prefix (the API keeps its documented default); one scan-page flow instead of three; `serve` no longer requires the seed student; "Show again" keeps the form's memory in step with the result shown; a result is forgotten by its timestamp, not a stale index; a stale doc comment and ADR 0001's port example fixed; the API reference states that no per-client rate limit exists. |
 | Security review on pull request 4 | No findings. Checked: attribute escaping of `data-answers` (askama entity-escapes quotes and angle brackets, and every submitted field except free-form attributes is validated to alphanumerics or hex), the inline scripts use `textContent` and DOM APIs only, "Show again" can only post same-origin form fields that the server validates, no handler logs form fields, no cookie, no endpoint returns another visitor's data. |
 
+## Local evidence: 2026-10-27 (favicon and the "about" notice)
+
+Same environment. No Rust code changed.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo check --all-targets`, `cargo test --locked --test http_api` | Passed: the templates compile and the 14 HTTP tests pass |
+| `python scripts/check_docs.py` | Passed |
+| Favicon | An inline SVG data URI in `templates/base.html`, so no static file route is needed; the browser check confirms the `link rel="icon"` resolves to an SVG the page can load |
+| "About" notice | On the home page and in every page's footer: not a DOE website, built by a parent for his own family, nothing official, link to the code |
+
 ## Remote evidence
 
 | Revision | Run | Outcome |
