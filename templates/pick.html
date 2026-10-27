@@ -45,12 +45,13 @@
     <label class="chip"><input type="radio" name="picks" value="screened"><span>Screened test</span></label>
   </div>
 </fieldset>
+{% include "distance.html" %}
 <p class="muted"><span id="shown"></span> programs shown. Click a column heading to sort. {% if let Some(y) = scores_year %}ELA and Math are the share of the school's students at proficiency on the {{ y }} state tests.{% endif %}</p>
 <table id="programs" class="sortable">
-  <thead><tr><th>Code</th><th>School / program</th><th>District</th><th>Picks by</th><th>Kind</th><th class="num">Seats</th><th class="num">Applicants</th><th class="num">ELA</th><th class="num">Math</th></tr></thead>
+  <thead><tr><th>Code</th><th>School / program</th><th>District</th><th>Picks by</th><th>Kind</th><th class="num">Seats</th><th class="num">Applicants</th><th class="num">ELA</th><th class="num">Math</th><th class="num distance">Distance</th></tr></thead>
   <tbody>
   {% for r in rows %}
-    <tr data-code="{{ r.code }}" data-district="{{ r.district }}" data-focus="{{ r.focus_slugs }}" data-screened="{{ r.screened }}" data-text="{{ r.school }} {{ r.program }} {{ r.code }}">
+    <tr data-code="{{ r.code }}" data-district="{{ r.district }}" data-focus="{{ r.focus_slugs }}" data-screened="{{ r.screened }}" data-text="{{ r.school }} {{ r.program }} {{ r.code }}" data-lat="{{ r.lat }}" data-lon="{{ r.lon }}">
       <td><button type="button" class="code" data-code="{{ r.code }}">{{ r.code }}</button></td>
       <td>{{ r.school }}<div class="hint">{{ r.program }}</div></td>
       <td data-v="{{ r.district }}">{{ r.district }} <small class="muted">{{ r.borough }}</small></td>
@@ -60,6 +61,7 @@
       <td class="num" data-v="{{ r.applicants }}">{{ r.applicants }}</td>
       <td class="num" data-v="{{ r.ela.raw }}">{{ r.ela.shown }}</td>
       <td class="num" data-v="{{ r.math.raw }}">{{ r.math.shown }}</td>
+      <td class="num distance" data-v=""></td>
     </tr>
   {% endfor %}
   </tbody>
@@ -127,7 +129,7 @@
     document.querySelectorAll('input[name="picks"]').forEach(function (i) { i.checked = i.value === (filters.picks || 'any'); });
     document.getElementById('search').value = filters.q || '';
   }
-  document.querySelectorAll('.picker-main input').forEach(function (i) { i.addEventListener('input', applyFilters); i.addEventListener('change', applyFilters); });
+  document.querySelectorAll('.picker-main fieldset input').forEach(function (i) { i.addEventListener('input', applyFilters); i.addEventListener('change', applyFilters); });
   document.querySelectorAll('button.code').forEach(function (b) {
     b.onclick = function () { var c = b.dataset.code; if (chosen.indexOf(c) < 0) { chosen.push(c); update(); } };
   });

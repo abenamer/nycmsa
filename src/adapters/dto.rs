@@ -246,6 +246,8 @@ pub struct ScanRowDto {
     pub scores_year: Option<u32>,
     pub ela_proficient_pct: Option<f64>,
     pub math_proficient_pct: Option<f64>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
 }
 
 pub fn parse_attributes<'a>(
@@ -506,6 +508,8 @@ pub fn scan_row_to_dto(row: &ScanRow) -> ScanRowDto {
         scores_year: row.scores.map(|s| s.year),
         ela_proficient_pct: row.scores.and_then(|s| s.ela_proficient_pct),
         math_proficient_pct: row.scores.and_then(|s| s.math_proficient_pct),
+        latitude: row.location.map(|l| l.latitude),
+        longitude: row.location.map(|l| l.longitude),
     }
 }
 

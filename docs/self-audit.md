@@ -193,6 +193,23 @@ start the application, that it is a UUID sorted `0` to `9` then `A` to
 | --- | --- |
 | `cargo check --all-targets`, `cargo test --locked --test http_api` | Passed |
 | `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+## Local evidence: 2026-10-27 (sort by distance)
+
+Same environment. The catalog's school coordinates (the DOE's geocoded
+addresses) now reach the picker and scan tables as `data-lat` and
+`data-lon`; a "Where do you live?" box geocodes the typed address in the
+browser with the city's GeoSearch service, keeps the coordinates in
+`nycmsa.home`, fills a Distance column with straight-line miles, and
+sorts by it. The server never sees the address.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt`, `clippy -D warnings`, `cargo test --locked` | Passed; the fixture test checks that every fixture school is geocoded and that M.S. 442 sits at 40.6562, -73.9826; a unit test rejects the `0, 0` placeholder, out-of-range and non-numeric values |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+| GeoSearch from this environment | Not reachable: the environment's network policy denies `geosearch.planninglabs.nyc`. The browser calls it directly, so the first real use in a browser is the test of that call; the page shows a message when the lookup fails or finds nothing. |
+| Browser check with Playwright (Chromium) | Passed with a stubbed geocoder response: typing an address fills the Distance column, sorts the picker ascending, survives a reload from `nycmsa.home` (sorted again), and "Forget" clears it. |
+| Code review on pull request 8 | Nine findings, all applied: a wrong coordinate in this table; a geocoder error status now reads as a failed lookup, not "not found"; the picker's filter listener no longer fires on the address box; a reload sorts by distance again; a malformed stored home is ignored; the `0, 0` placeholder is not a location; doc comments on the right structs; the CSV's new columns are appended, not inserted; and why a bad coordinate is `None` rather than an error is stated on the function. |
+| Security review on pull request 8 | No findings. Checked: the geocoder's label and coordinates reach the page only through `textContent`, `value` and arithmetic; the fetch URL encodes the address; the address box has no form name and no form action, so nothing carries it to this server; coordinates are numeric in the templates, JSON and CSV. |
 
 ## Remote evidence
 
@@ -201,6 +218,7 @@ start the application, that it is a UUID sorted `0` to `9` then `A` to
 | adf9f22 (pull request 1, 2026-10-27) | GitHub Actions run 40453826962 (pull request) and 40453821113 (push) | Passed: `docs`, `rust` (fmt, check, clippy, tests, both PostgreSQL integration tests against the `postgres:17` service, `cargo audit`), `docker` (image build and `sim --trials 1000`) |
 | 93a411c (pull request 2, 2026-10-27) | GitHub Actions run 40456654387 (pull request) and 40456650876 (push) | Passed: the same three jobs |
 | 077fcc3 (pull request 4, 2026-10-27) | GitHub Actions run 40468033725 (pull request) and 40468028557 (push) | Passed: the same three jobs, with the PostgreSQL step running only the reference-store test |
+| 6aa1a53 (pull request 8, 2026-10-27) | GitHub Actions run 40472544141 (pull request) and 40472539221 (push) | Passed: the same three jobs |
 
 The two earlier pushes on the same pull request failed in `rust`; the
 local-evidence table above records why and the fix for each. A commit
