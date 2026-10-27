@@ -4,13 +4,13 @@
 
 use std::fmt;
 
-use crate::domain::{ProgramDefinitions, ProgramProfile, Student, TestResults};
+use crate::domain::{DemandHistory, ProgramDefinitions, ProgramProfile, Student, TestResults};
 
 use super::download::DistrictFilter;
 use super::ports::{
-    CatalogDownloader, CatalogSnapshot, CatalogStore, Clock, DownloadError, ProfileStore,
-    ProgramDetailsDownloader, ProgramStore, RepositoryError, Stored, StudentDefaultsStore,
-    TestResultsDownloader, TestResultsStore,
+    CatalogDownloader, CatalogSnapshot, CatalogStore, Clock, DemandDownloader, DemandStore,
+    DownloadError, ProfileStore, ProgramDetailsDownloader, ProgramStore, RepositoryError, Stored,
+    StudentDefaultsStore, TestResultsDownloader, TestResultsStore,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -161,6 +161,79 @@ impl<D: ProgramDetailsDownloader, S: CatalogStore + ProfileStore, C: Clock>
     }
 }
 
+/// What a demand refresh did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DemandOutcome {
+    /// The admissions years stored, ascending.
+    pub years: Vec<u32>,
+    pub schools: usize,
+    /// Years whose report could not be downloaded or read, with the
+    /// reason. They are absent from the snapshot.
+    pub failed_years: Vec<(u32, String)>,
+}
+
+/// Downloads every year of the DOE's school demand reports and stores
+/// them as one snapshot. A failed year is skipped; the snapshot is saved
+/// when at least one year succeeded.
+pub struct RefreshDemand<D, S, C> {
+    downloader: D,
+    store: S,
+    clock: C,
+}
+
+impl<D: DemandDownloader, S: DemandStore, C: Clock> RefreshDemand<D, S, C> {
+    pub fn new(downloader: D, store: S, clock: C) -> Self {
+        Self {
+            downloader,
+            store,
+            clock,
+        }
+    }
+
+    pub async fn execute(&self, source: &str) -> Result<DemandOutcome, ReferenceError> {
+        let mut history = DemandHistory::new();
+        let mut failed_years = Vec::new();
+        for year in self.downloader.years() {
+            match self.downloader.download(year).await {
+                Ok(found) => history.extend(found),
+                Err(error) => failed_years.push((year, error.to_string())),
+            }
+        }
+        if history.is_empty() {
+            let reason = failed_years
+                .first()
+                .map_or_else(|| "no years configured".to_owned(), |(_, r)| r.clone());
+            return Err(ReferenceError::Download(DownloadError::Request {
+                url: source.to_owned(),
+                reason: format!(
+                    "every year failed ({} years); first error: {reason}",
+                    failed_years.len()
+                ),
+            }));
+        }
+        let source = if failed_years.is_empty() {
+            source.to_owned()
+        } else {
+            format!(
+                "{source}; years missing: {}",
+                failed_years
+                    .iter()
+                    .map(|(y, _)| y.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        self.store
+            .save_demand(&history, &source, self.clock.now())
+            .await?;
+        Ok(DemandOutcome {
+            years: history.years(),
+            schools: history.schools(),
+            failed_years,
+        })
+    }
+}
+
 /// Re-runs the classification rules on the latest stored profiles and
 /// stores the result as a new snapshot, without a download.
 pub struct ReclassifyProfiles<S, C> {
@@ -233,13 +306,16 @@ pub struct ReferenceData {
     /// does not read it (ADR 0005), so it may be absent.
     pub student: Option<Stored<Student>>,
     pub profiles: Stored<Vec<ProgramProfile>>,
+    /// The DOE's school demand reports. Supplementary: the pages show no
+    /// history when the download has not succeeded yet.
+    pub demand: Option<Stored<DemandHistory>>,
 }
 
 impl fmt::Display for ReferenceData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "catalog: {} schools ({}); scores: {} schools ({}); programs: {} ({}); defaults ({}); profiles: {} ({})",
+            "catalog: {} schools ({}); scores: {} schools ({}); programs: {} ({}); defaults ({}); profiles: {} ({}); demand: {} school-years ({})",
             self.catalog.value.len(),
             self.catalog.source,
             self.results.value.len(),
@@ -248,7 +324,9 @@ impl fmt::Display for ReferenceData {
             self.programs.source,
             self.student.as_ref().map_or("none", |s| s.source.as_str()),
             self.profiles.value.len(),
-            self.profiles.source
+            self.profiles.source,
+            self.demand.as_ref().map_or(0, |d| d.value.len()),
+            self.demand.as_ref().map_or("none", |d| d.source.as_str())
         )
     }
 }
@@ -261,6 +339,7 @@ pub struct ReferenceInventory {
     pub programs: bool,
     pub student: bool,
     pub profiles: bool,
+    pub demand: bool,
 }
 
 /// Reads the latest snapshots. Every set must exist.
@@ -270,7 +349,12 @@ pub struct LoadReferenceData<S> {
 
 impl<S> LoadReferenceData<S>
 where
-    S: CatalogStore + TestResultsStore + ProgramStore + StudentDefaultsStore + ProfileStore,
+    S: CatalogStore
+        + TestResultsStore
+        + ProgramStore
+        + StudentDefaultsStore
+        + ProfileStore
+        + DemandStore,
 {
     pub fn new(store: S) -> Self {
         Self { store }
@@ -283,6 +367,7 @@ where
             programs: self.store.latest_programs().await?.is_some(),
             student: self.store.latest_student_defaults().await?.is_some(),
             profiles: self.store.latest_profiles().await?.is_some(),
+            demand: self.store.latest_demand().await?.is_some(),
         })
     }
 
@@ -309,6 +394,7 @@ where
                 .latest_profiles()
                 .await?
                 .ok_or(ReferenceError::Missing("program profiles"))?,
+            demand: self.store.latest_demand().await?,
         })
     }
 }
@@ -320,8 +406,8 @@ mod tests {
 
     use super::*;
     use crate::application::ports::{
-        CatalogSnapshot, CatalogStore, Clock, DownloadError, ProfileStore,
-        ProgramDetailsDownloader, RepositoryError, Stored,
+        CatalogSnapshot, CatalogStore, Clock, DemandDownloader, DemandStore, DownloadError,
+        ProfileStore, ProgramDetailsDownloader, RepositoryError, Stored,
     };
     use crate::domain::ProgramCode;
 
@@ -440,6 +526,102 @@ mod tests {
         assert_eq!(saved.len(), 1);
         assert_eq!(saved[0].0, 2);
         assert_eq!(saved[0].1, "MySchools; 1 of 3 schools failed");
+    }
+
+    /// Fails for the listed years and returns one school for the rest.
+    struct DemandDownloads {
+        years: Vec<u32>,
+        failing: Vec<u32>,
+    }
+
+    impl DemandDownloader for DemandDownloads {
+        fn years(&self) -> Vec<u32> {
+            self.years.clone()
+        }
+
+        async fn download(&self, year: u32) -> Result<DemandHistory, DownloadError> {
+            if self.failing.contains(&year) {
+                return Err(DownloadError::Request {
+                    url: format!("report/{year}"),
+                    reason: "HTTP 404".to_owned(),
+                });
+            }
+            let mut history = DemandHistory::new();
+            history.insert(
+                "15K442",
+                crate::domain::SchoolDemandYear {
+                    year,
+                    all: crate::domain::DemandFigures {
+                        seats: Some(100),
+                        listed: Some(1000),
+                        considered: None,
+                        offers: Some(110),
+                    },
+                    by_residential_district: Default::default(),
+                },
+            );
+            Ok(history)
+        }
+    }
+
+    struct DemandSaves(Mutex<Vec<(usize, String)>>);
+
+    #[async_trait::async_trait]
+    impl DemandStore for &DemandSaves {
+        async fn save_demand(
+            &self,
+            history: &DemandHistory,
+            source: &str,
+            _: SystemTime,
+        ) -> Result<(), RepositoryError> {
+            self.0
+                .lock()
+                .expect("not poisoned")
+                .push((history.len(), source.to_owned()));
+            Ok(())
+        }
+
+        async fn latest_demand(&self) -> Result<Option<Stored<DemandHistory>>, RepositoryError> {
+            Ok(None)
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_year_is_skipped_and_named_in_the_source() {
+        let saves = DemandSaves(Mutex::new(Vec::new()));
+        let refresh = RefreshDemand::new(
+            DemandDownloads {
+                years: vec![2023, 2024, 2025],
+                failing: vec![2024],
+            },
+            &saves,
+            FixedClock,
+        );
+        let outcome = refresh.execute("InfoHub").await.expect("succeeds");
+        assert_eq!(outcome.years, vec![2023, 2025]);
+        assert_eq!(outcome.schools, 1);
+        assert_eq!(outcome.failed_years.len(), 1);
+        let saved = saves.0.lock().expect("not poisoned");
+        assert_eq!(saved[0], (2, "InfoHub; years missing: 2024".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn nothing_is_saved_when_every_year_fails() {
+        let saves = DemandSaves(Mutex::new(Vec::new()));
+        let refresh = RefreshDemand::new(
+            DemandDownloads {
+                years: vec![2024, 2025],
+                failing: vec![2024, 2025],
+            },
+            &saves,
+            FixedClock,
+        );
+        let error = refresh.execute("InfoHub").await.expect_err("fails");
+        assert!(
+            error.to_string().contains("every year failed (2 years)"),
+            "{error}"
+        );
+        assert!(saves.0.lock().expect("not poisoned").is_empty());
     }
 
     #[tokio::test]

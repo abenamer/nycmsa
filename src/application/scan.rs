@@ -4,16 +4,55 @@
 //! port: the catalog has one source and the scan needs no test double beyond
 //! a `Vec` (REAS-ARCH-004).
 
-use crate::domain::{scan, CatalogProgram, DistrictCode, ScanRequest, ScanRow, TestResults};
+use crate::domain::{
+    scan, CatalogProgram, DemandHistory, DistrictCode, LatestDemand, ScanRequest, ScanRow,
+    SchoolDemandYear, TestResults,
+};
 
 pub struct ScanCatalog {
     catalog: Vec<CatalogProgram>,
     results: TestResults,
+    demand: DemandHistory,
 }
 
 impl ScanCatalog {
     pub fn new(catalog: Vec<CatalogProgram>, results: TestResults) -> Self {
-        Self { catalog, results }
+        Self {
+            catalog,
+            results,
+            demand: DemandHistory::new(),
+        }
+    }
+
+    /// Attaches the DOE's school demand history.
+    pub fn with_demand(mut self, demand: DemandHistory) -> Self {
+        self.demand = demand;
+        self
+    }
+
+    /// The latest admissions year in the demand history, if any.
+    pub fn demand_year(&self) -> Option<u32> {
+        self.demand.latest_year()
+    }
+
+    /// The admissions years in the demand history, ascending.
+    pub fn demand_years(&self) -> Vec<u32> {
+        self.demand.years()
+    }
+
+    /// Number of schools in the demand history.
+    pub fn schools_with_demand(&self) -> usize {
+        self.demand.schools()
+    }
+
+    /// A school's latest demand figures, by DBN.
+    pub fn demand_for(&self, dbn: &str) -> Option<LatestDemand> {
+        self.demand.latest(dbn)
+    }
+
+    /// A school's demand history, by DBN, years ascending.
+    pub fn demand_history(&self, dbn: &str) -> &[SchoolDemandYear] {
+        self.demand.years_of(dbn)
     }
 
     /// The loaded catalog, in file order.
@@ -56,6 +95,6 @@ impl ScanCatalog {
     }
 
     pub fn execute(&self, request: &ScanRequest) -> Vec<ScanRow> {
-        scan(&self.catalog, &self.results, request)
+        scan(&self.catalog, &self.results, &self.demand, request)
     }
 }

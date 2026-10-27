@@ -46,19 +46,21 @@
   </div>
 </fieldset>
 {% include "distance.html" %}
-<p class="muted"><span id="shown"></span> programs shown. Click a column heading to sort. {% if let Some(y) = scores_year %}ELA and Math are the share of the school's students at proficiency on the {{ y }} state tests.{% endif %}</p>
+<p class="muted"><span id="shown"></span> programs shown. Click a column heading to sort. Applicants are the children MySchools counts as considered for a seat at the program, not everyone who listed it.{% if let Some(y) = demand_year %} "Listed the school" and "Competed" are the DOE's fall {{ y }} figures for the whole school: families who named it anywhere on their application, and families who competed for a seat there. Click a school's name for its year-by-year history.{% endif %}{% if let Some(y) = scores_year %} ELA and Math are the share of the school's students at proficiency on the {{ y }} state tests.{% endif %}</p>
 <table id="programs" class="sortable">
-  <thead><tr><th>Code</th><th>School / program</th><th>District</th><th>Picks by</th><th>Kind</th><th class="num">Seats</th><th class="num">Applicants</th><th class="num">ELA</th><th class="num">Math</th><th class="num distance">Distance</th></tr></thead>
+  <thead><tr><th>Code</th><th>School / program</th><th>District</th><th>Picks by</th><th>Kind</th><th class="num">Seats</th><th class="num">Applicants</th><th class="num">Listed the school</th><th class="num">Competed</th><th class="num">ELA</th><th class="num">Math</th><th class="num distance">Distance</th></tr></thead>
   <tbody>
   {% for r in rows %}
     <tr data-code="{{ r.code }}" data-district="{{ r.district }}" data-focus="{{ r.focus_slugs }}" data-screened="{{ r.screened }}" data-text="{{ r.school }} {{ r.program }} {{ r.code }}" data-lat="{{ r.lat }}" data-lon="{{ r.lon }}">
       <td><button type="button" class="code" data-code="{{ r.code }}">{{ r.code }}</button></td>
-      <td>{{ r.school }}<div class="hint">{{ r.program }}</div>{% include "map_links.html" %}</td>
+      <td><a href="{{ r.school_url }}">{{ r.school }}</a><div class="hint">{{ r.program }}</div>{% include "map_links.html" %}</td>
       <td data-v="{{ r.district }}">{{ r.district }} <small class="muted">{{ r.borough }}</small></td>
       <td>{{ r.picks_by }}</td>
       <td><a href="/profiles?district={{ r.district }}#{{ r.code }}" class="muted">{{ r.focus_labels }}</a></td>
       <td class="num" data-v="{{ r.seats }}">{{ r.seats }}</td>
       <td class="num" data-v="{{ r.applicants }}">{{ r.applicants }}</td>
+      <td class="num" data-v="{{ r.listed }}">{{ r.listed }}</td>
+      <td class="num" data-v="{{ r.considered }}">{{ r.considered }}</td>
       <td class="num" data-v="{{ r.ela.raw }}">{{ r.ela.shown }}</td>
       <td class="num" data-v="{{ r.math.raw }}">{{ r.math.shown }}</td>
       <td class="num distance" data-v=""></td>

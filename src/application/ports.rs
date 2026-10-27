@@ -3,7 +3,7 @@
 use std::time::SystemTime;
 
 use crate::domain::ProgramProfile;
-use crate::domain::{DistrictCode, ProgramDefinitions, Student, TestResults};
+use crate::domain::{DemandHistory, DistrictCode, ProgramDefinitions, Student, TestResults};
 
 use super::download::DistrictFilter;
 
@@ -89,6 +89,16 @@ pub trait TestResultsDownloader {
     async fn download(&self) -> Result<TestResultsSnapshot, DownloadError>;
 }
 
+/// Outbound port: the DOE's school-level demand reports, one admissions
+/// year per download.
+pub trait DemandDownloader {
+    /// The admissions years the adapter knows a report for, ascending.
+    fn years(&self) -> Vec<u32>;
+    // Awaited on the main task; no `Send` bound is needed.
+    #[allow(async_fn_in_trait)]
+    async fn download(&self, year: u32) -> Result<DemandHistory, DownloadError>;
+}
+
 /// Outbound port: download of the MySchools catalog.
 ///
 /// Native `async fn`; the composition root awaits it on the main task, so
@@ -156,6 +166,18 @@ pub trait TestResultsStore {
         recorded_at: SystemTime,
     ) -> Result<(), RepositoryError>;
     async fn latest_test_results(&self) -> Result<Option<Stored<TestResults>>, RepositoryError>;
+}
+
+/// Outbound port: versioned school demand history.
+#[async_trait::async_trait]
+pub trait DemandStore {
+    async fn save_demand(
+        &self,
+        history: &DemandHistory,
+        source: &str,
+        recorded_at: SystemTime,
+    ) -> Result<(), RepositoryError>;
+    async fn latest_demand(&self) -> Result<Option<Stored<DemandHistory>>, RepositoryError>;
 }
 
 /// Outbound port: versioned hand-entered program definitions.

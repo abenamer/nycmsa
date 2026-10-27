@@ -2,6 +2,7 @@
 //! catalog scan. Nothing in this module performs I/O.
 
 pub mod catalog;
+pub mod demand;
 pub mod lottery;
 pub mod program;
 pub mod simulation;
@@ -16,6 +17,7 @@ pub use catalog::{
     GeoPoint, GroupDemandText, PriorityCriterion, ProfileText, ProgramFocus, ProgramProfile, Reach,
     ScanRequest, ScanRow, SchoolScores, SubjectResults, TestResults, TAG_THRESHOLD,
 };
+pub use demand::{DemandFigures, DemandHistory, LatestDemand, SchoolDemandYear};
 pub use lottery::{InvalidLotteryPrefix, InvalidUnitInterval, LotteryPrefix, UnitInterval};
 pub use program::{
     Attribute, GroupDemand, InvalidAttribute, InvalidGroupDemand, InvalidProgram,

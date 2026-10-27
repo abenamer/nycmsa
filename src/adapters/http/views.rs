@@ -224,6 +224,12 @@ pub struct PickRow {
     pub applicants: String,
     pub ela: ScoreCell,
     pub math: ScoreCell,
+    /// The DOE's latest school-level figures: families who listed the
+    /// school and families who competed for a seat. Empty when unknown.
+    pub listed: String,
+    pub considered: String,
+    /// The school's own page.
+    pub school_url: String,
     /// The school's coordinates for the browser's distance column; empty
     /// when the catalog has none.
     pub lat: String,
@@ -241,6 +247,7 @@ pub struct PickerPage {
     pub focus_chips: Vec<Chip>,
     pub rows: Vec<PickRow>,
     pub scores_year: Option<u32>,
+    pub demand_year: Option<u32>,
     pub profiled: usize,
 }
 
@@ -248,6 +255,7 @@ impl PickerPage {
     pub fn new(state: &AppState) -> Self {
         let definitions = state.simulate.default_programs();
         let scores_year = state.scan.scores_year();
+        let demand_year = state.scan.demand_year();
         let rows = state
             .scan
             .programs()
@@ -255,6 +263,7 @@ impl PickerPage {
             .filter_map(|p| {
                 let program = definitions.get(&p.code)?;
                 let scores = state.scan.scores_for(&p.dbn);
+                let demand = state.scan.demand_for(&p.dbn);
                 let focus = state.profiles.tags(p.code.as_str());
                 Some(PickRow {
                     code: p.code.to_string(),
@@ -274,6 +283,9 @@ impl PickerPage {
                     applicants: opt(p.applicants),
                     ela: ScoreCell::new(scores.and_then(|s| s.ela_proficient_pct)),
                     math: ScoreCell::new(scores.and_then(|s| s.math_proficient_pct)),
+                    listed: opt(demand.and_then(|d| d.figures.listed)),
+                    considered: opt(demand.and_then(|d| d.figures.considered)),
+                    school_url: school_url(&p.dbn),
                     lat: coordinate(p.location.map(|l| l.latitude)),
                     lon: coordinate(p.location.map(|l| l.longitude)),
                     address: p.address.clone().unwrap_or_default(),
@@ -294,6 +306,7 @@ impl PickerPage {
                 .collect(),
             rows,
             scores_year,
+            demand_year,
             profiled: state.profiles.len(),
         }
     }
@@ -661,6 +674,9 @@ pub struct ScanRowView {
     pub outlook_sort: u8,
     pub ela: ScoreCell,
     pub math: ScoreCell,
+    pub listed: String,
+    pub considered: String,
+    pub school_url: String,
     pub lat: String,
     pub lon: String,
     pub address: String,
@@ -749,6 +765,7 @@ pub struct ScanPage {
     pub lottery_line: Option<String>,
     pub catalog_size: usize,
     pub scores_line: String,
+    pub demand_line: String,
     pub rows: Vec<ScanRowView>,
     pub csv_url: String,
     pub error: Option<String>,
@@ -756,16 +773,47 @@ pub struct ScanPage {
 
 const ROLE_ATTRIBUTES: [&str; 4] = ["sibling", "zoned", "continuing", "current_student"];
 
+/// What the scan page says about the loaded reference data.
+pub struct ScanFacts {
+    pub districts: Vec<DistrictCode>,
+    pub catalog_size: usize,
+    pub schools_with_scores: usize,
+    pub scores_year: Option<u32>,
+    pub demand_year: Option<u32>,
+}
+
+impl ScanFacts {
+    pub fn of(scan: &crate::application::ScanCatalog) -> Self {
+        Self {
+            districts: scan.districts(),
+            catalog_size: scan.program_count(),
+            schools_with_scores: scan.schools_with_scores(),
+            scores_year: scan.scores_year(),
+            demand_year: scan.demand_year(),
+        }
+    }
+}
+
 impl ScanPage {
     pub fn new(
         query: &ScanQuery,
         result: Option<(&ScanRequest, &[ScanRow])>,
-        districts: &[DistrictCode],
-        catalog_size: usize,
-        schools_with_scores: usize,
-        scores_year: Option<u32>,
+        facts: &ScanFacts,
         error: Option<String>,
     ) -> Self {
+        let ScanFacts {
+            districts,
+            catalog_size,
+            schools_with_scores,
+            scores_year,
+            demand_year,
+        } = facts;
+        let (catalog_size, schools_with_scores, scores_year, demand_year) = (
+            *catalog_size,
+            *schools_with_scores,
+            *scores_year,
+            *demand_year,
+        );
         let definitions = ProgramDefinitions::default();
         let selected: Vec<String> = query
             .attributes
@@ -779,6 +827,12 @@ impl ScanPage {
                 "ELA and Math show the share of the school's students at proficiency (levels 3 and 4) on the {year} New York State tests, as published by the NYC DOE. Blank means the DOE suppressed the figure or did not report it."
             ),
             (_, None) => "State test results are loaded but none of these schools has a figure.".to_owned(),
+        };
+        let demand_line = match demand_year {
+            Some(year) => format!(
+                "\"Listed the school\" and \"Competed\" are the DOE's fall {year} figures for the whole school: families who named it anywhere on their application, and families who competed for a seat there. Click a school's name for its history."
+            ),
+            None => String::new(),
         };
         let role_chips = ROLE_ATTRIBUTES
             .iter()
@@ -816,6 +870,7 @@ impl ScanPage {
             lottery_line,
             catalog_size,
             scores_line,
+            demand_line,
             rows,
             csv_url,
             error,
@@ -845,6 +900,9 @@ impl ScanPage {
             outlook_sort,
             ela: ScoreCell::new(r.scores.and_then(|s| s.ela_proficient_pct)),
             math: ScoreCell::new(r.scores.and_then(|s| s.math_proficient_pct)),
+            listed: opt(r.demand.and_then(|d| d.figures.listed)),
+            considered: opt(r.demand.and_then(|d| d.figures.considered)),
+            school_url: school_url(&r.dbn),
             lat: coordinate(r.location.map(|l| l.latitude)),
             lon: coordinate(r.location.map(|l| l.longitude)),
             address: r.address.clone().unwrap_or_default(),
@@ -937,6 +995,150 @@ impl ProgramsPage {
                 })
                 .collect(),
         }
+    }
+}
+
+/// The school's own page. DBNs are letters and digits, so no escaping is
+/// needed; anything else gives a path that 404s.
+fn school_url(dbn: &str) -> String {
+    format!("/schools/{}", dbn.to_uppercase())
+}
+
+fn ratio(value: Option<f64>, digits: usize) -> (String, String) {
+    match value {
+        Some(v) => (format!("{v:.digits$}"), format!("{v}")),
+        None => (String::new(), String::new()),
+    }
+}
+
+pub struct SchoolProgramView {
+    pub code: String,
+    pub name: String,
+    pub method: String,
+    pub seats: String,
+    pub applicants: String,
+}
+
+pub struct DemandYearView {
+    pub year: u32,
+    pub seats: String,
+    pub listed: String,
+    pub considered: String,
+    pub offers: String,
+    pub offer_share: String,
+    pub offer_share_sort: String,
+    pub listed_per_seat: String,
+    pub listed_per_seat_sort: String,
+}
+
+pub struct DistrictDemandView {
+    pub district: String,
+    pub district_sort: String,
+    pub listed: String,
+    pub considered: String,
+    pub offers: String,
+}
+
+#[derive(Template)]
+#[template(path = "school.html")]
+pub struct SchoolPage {
+    pub dbn: String,
+    pub name: String,
+    pub district: String,
+    pub address: String,
+    pub map_url: String,
+    pub directions_url: String,
+    pub programs: Vec<SchoolProgramView>,
+    /// Newest year first.
+    pub years: Vec<DemandYearView>,
+    pub latest_year: u32,
+    /// The latest year's figures by the applicants' residential district,
+    /// most competing families first.
+    pub districts: Vec<DistrictDemandView>,
+}
+
+impl SchoolPage {
+    /// `None` when no catalog program belongs to the school.
+    pub fn new(state: &AppState, dbn: &str) -> Option<Self> {
+        let dbn = dbn.trim().to_uppercase();
+        let programs: Vec<&crate::domain::CatalogProgram> = state
+            .scan
+            .programs()
+            .iter()
+            .filter(|p| p.dbn.eq_ignore_ascii_case(&dbn))
+            .collect();
+        let first = *programs.first()?;
+        let history = state.scan.demand_history(&dbn);
+        let years: Vec<DemandYearView> = history
+            .iter()
+            .rev()
+            .map(|y| {
+                let (offer_share, offer_share_sort) = match y.all.offer_share() {
+                    Some(share) => (pct0(share), format!("{share}")),
+                    None => (String::new(), String::new()),
+                };
+                let (listed_per_seat, listed_per_seat_sort) = ratio(y.all.listed_per_seat(), 1);
+                DemandYearView {
+                    year: y.year,
+                    seats: opt(y.all.seats),
+                    listed: opt(y.all.listed),
+                    considered: opt(y.all.considered),
+                    offers: opt(y.all.offers),
+                    offer_share,
+                    offer_share_sort,
+                    listed_per_seat,
+                    listed_per_seat_sort,
+                }
+            })
+            .collect();
+        let latest = history.last();
+        let mut districts: Vec<DistrictDemandView> = latest
+            .map(|y| {
+                y.by_residential_district
+                    .iter()
+                    .map(|(code, f)| DistrictDemandView {
+                        district: format!("District {code}"),
+                        district_sort: format!("{:>3}", code),
+                        listed: opt(f.listed),
+                        considered: opt(f.considered),
+                        offers: opt(f.offers),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        districts.sort_by(|a, b| {
+            let key = |d: &DistrictDemandView| {
+                d.considered
+                    .parse::<u32>()
+                    .ok()
+                    .or_else(|| d.listed.parse::<u32>().ok())
+                    .unwrap_or(0)
+            };
+            key(b)
+                .cmp(&key(a))
+                .then_with(|| a.district_sort.cmp(&b.district_sort))
+        });
+        Some(Self {
+            dbn: dbn.clone(),
+            name: first.school_name.clone(),
+            district: first.district.to_string(),
+            address: first.address.clone().unwrap_or_default(),
+            map_url: map_url(first.location, first.address.as_deref()),
+            directions_url: directions_url(first.location),
+            programs: programs
+                .iter()
+                .map(|p| SchoolProgramView {
+                    code: p.code.to_string(),
+                    name: p.program_name.clone(),
+                    method: p.method.clone(),
+                    seats: opt(p.seats),
+                    applicants: opt(p.applicants),
+                })
+                .collect(),
+            years,
+            latest_year: latest.map_or(0, |y| y.year),
+            districts,
+        })
     }
 }
 

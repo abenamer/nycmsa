@@ -4,6 +4,7 @@
 
 pub mod dto;
 pub mod infohub;
+pub mod infohub_demand;
 pub mod json_files;
 pub mod myschools;
 pub mod myschools_api;
@@ -14,6 +15,7 @@ pub mod system_clock;
 pub mod test_results;
 
 pub use infohub::InfoHubClient;
+pub use infohub_demand::InfoHubDemandClient;
 pub use myschools_api::MySchoolsApiClient;
 pub use open_data::NycOpenDataClient;
 pub use postgres_reference::PostgresReferenceData;

@@ -35,6 +35,9 @@ fn main() -> ExitCode {
         Command::FetchProfiles(args) => {
             with_runtime(|| composition::run_fetch_profiles(&args)).map(|text| eprint!("{text}"))
         }
+        Command::FetchDemand(args) => {
+            with_runtime(|| composition::run_fetch_demand(&args)).map(|text| eprint!("{text}"))
+        }
         Command::ReclassifyProfiles(args) => {
             with_runtime(|| composition::run_reclassify_profiles(&args))
                 .map(|text| eprint!("{text}"))

@@ -6,8 +6,10 @@ others. A Rust port of
 [nyc-ms-admissions-sim](https://github.com/abenamer/nyc-ms-admissions-sim)
 with a web interface. It estimates one student's chances across a ranked
 list of NYC middle school programs from last year's MySchools "Seats and
-Demand" figures, and scans the MySchools catalog for every program the
-student is eligible for.
+Demand" figures, scans the MySchools catalog for every program the
+student is eligible for, and shows each school's year-by-year demand from
+the DOE's reports: families who listed it, families who competed for a
+seat, and offers.
 
 The code follows the [REAS](https://github.com/abenamer/reas) engineering
 standard: explicit domain types, ports and adapters, one composition root,

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ name }}{% endblock %}
+{% block content %}
+<h1>{{ name }}</h1>
+<p class="muted">District {{ district }} · <code>{{ dbn }}</code>{% if !address.is_empty() %} · {{ address }}{% endif %}{% if !map_url.is_empty() %} · <a href="{{ map_url }}" rel="noopener noreferrer">Map</a> · <a href="{{ directions_url }}" rel="noopener noreferrer">Directions by transit</a>{% endif %}</p>
+
+<h2>Programs in the catalog</h2>
+<table>
+  <thead><tr><th>Program</th><th>Code</th><th>Picks by</th><th class="num">Seats</th><th class="num">Applicants considered</th></tr></thead>
+  <tbody>
+  {% for p in programs %}
+    <tr><td>{{ p.name }}</td><td><code>{{ p.code }}</code></td><td>{{ p.method }}</td><td class="num">{{ p.seats }}</td><td class="num">{{ p.applicants }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="hint">Seats and applicants are last year's general-education figures from MySchools. MySchools counts as applicants only the children who were considered for a seat at the program: a child who got a more preferred choice is left out. <a href="/programs?district={{ district }}">Last year's numbers by priority group</a>.</p>
+
+<h2>Grade 6 demand, year by year</h2>
+{% if years.is_empty() %}
+<p class="muted">No demand history is loaded for this school. The DOE's reports cover schools that take part in the centralized middle school admissions process; run <code>nycmsa fetch-demand</code> if the history is missing for every school.</p>
+{% else %}
+<table class="sortable">
+  <thead><tr><th class="num">Fall</th><th class="num">Seats</th><th class="num">Families who listed it</th><th class="num">Who competed for a seat</th><th class="num">Offers</th><th class="num">Offers per competing family</th><th class="num">Listed per seat</th></tr></thead>
+  <tbody>
+  {% for y in years %}
+    <tr><td class="num" data-v="{{ y.year }}">{{ y.year }}</td><td class="num" data-v="{{ y.seats }}">{{ y.seats }}</td><td class="num" data-v="{{ y.listed }}">{{ y.listed }}</td><td class="num" data-v="{{ y.considered }}">{{ y.considered }}</td><td class="num" data-v="{{ y.offers }}">{{ y.offers }}</td><td class="num" data-v="{{ y.offer_share_sort }}">{{ y.offer_share }}</td><td class="num" data-v="{{ y.listed_per_seat_sort }}">{{ y.listed_per_seat }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="hint">From the DOE's yearly reports on applications and offers (Local Law 72 of 2018), main round, all grade 6 programs of the school together, general education and students with disabilities combined. "Families who listed it" counts every application that named the school among its up to twelve choices. "Who competed for a seat" is the DOE's "true applicants": those not matched to a more preferred choice, published from fall 2023 on. Offers can exceed seats because the DOE expects some families to go elsewhere. A blank is a figure the DOE suppressed (fewer than six students) or did not publish. The DOE changed how it counts seats in 2023, so compare seats across that line with care.</p>
+{% if !districts.is_empty() %}
+<h2>Fall {{ latest_year }}, by where the applicants live</h2>
+<table class="sortable">
+  <thead><tr><th>Residential district</th><th class="num">Families who listed it</th><th class="num">Who competed for a seat</th><th class="num">Offers</th></tr></thead>
+  <tbody>
+  {% for d in districts %}
+    <tr><td data-v="{{ d.district_sort }}">{{ d.district }}</td><td class="num" data-v="{{ d.listed }}">{{ d.listed }}</td><td class="num" data-v="{{ d.considered }}">{{ d.considered }}</td><td class="num" data-v="{{ d.offers }}">{{ d.offers }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="hint">Residence is self-reported at application time for children not already enrolled in a public school. Districts with fewer than six applicants are suppressed by the DOE and do not appear.</p>
+{% endif %}
+{% include "sortable.html" %}
+{% endif %}
+<p><a href="/pick">Back to the program picker</a> · <a href="/scan">Which programs could we get into?</a></p>
+{% endblock %}

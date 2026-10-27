@@ -11,13 +11,14 @@ pub mod simulate;
 
 pub use download::{DistrictFilter, DownloadCatalog, DownloadTestResults};
 pub use ports::{
-    CatalogDownloader, CatalogSnapshot, CatalogStore, Clock, DownloadError, ProfileStore,
-    ProgramDetailsDownloader, ProgramStore, RepositoryError, Stored, StudentDefaultsStore,
-    TestResultsDownloader, TestResultsSnapshot, TestResultsStore,
+    CatalogDownloader, CatalogSnapshot, CatalogStore, Clock, DemandDownloader, DemandStore,
+    DownloadError, ProfileStore, ProgramDetailsDownloader, ProgramStore, RepositoryError, Stored,
+    StudentDefaultsStore, TestResultsDownloader, TestResultsSnapshot, TestResultsStore,
 };
 pub use reference::{
-    ImportSeeds, LoadReferenceData, ReclassifyProfiles, ReferenceData, ReferenceError,
-    RefreshCatalog, RefreshOutcome, RefreshProfiles, RefreshTestResults,
+    DemandOutcome, ImportSeeds, LoadReferenceData, ReclassifyProfiles, ReferenceData,
+    ReferenceError, RefreshCatalog, RefreshDemand, RefreshOutcome, RefreshProfiles,
+    RefreshTestResults,
 };
 pub use scan::ScanCatalog;
 pub use simulate::{SimulateStudent, SimulationRequest};

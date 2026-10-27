@@ -150,12 +150,48 @@ published seats or applicants, not only the hand-entered ones.
   continuing-student, and current-student rules. A group whose rule the
   parser does not recognise admits nobody.
 - Offers are capped at applicants; both are rounded in the source text.
+- "Applicants" in MySchools are the children who were considered for a
+  seat at the program: those who did not match to a more preferred
+  choice. The DOE's middle school page defines the figure that way. A
+  program's applicants are therefore not the families who listed it,
+  which citywide is two to three times as many (see
+  [School demand history](#school-demand-history)). Offers divided by
+  applicants in a group is then the share of the group's random numbers
+  above the cutoff, which is what the simulation draws from.
 - First-round offers are an estimate: the seats are filled in priority
   order, each group taking `min(offers, seats still open)`. The rest of a
   group's offers count as waitlist offers. The hand-entered
   `data/programs.json` keeps the DOE's own split where it was read from
   the screenshots, and its programs replace the derived ones of the same
   code.
+
+## School demand history
+
+`domain::demand` holds the DOE's yearly reports on school applications,
+offers and seats (Local Law 72 of 2018, formerly 1486-A), grade 6 only,
+per school. For each school and fall of entry a `SchoolDemandYear` has
+the overall `DemandFigures` and the same figures by the applicants'
+residential district:
+
+| Figure | Meaning |
+| --- | --- |
+| `seats` | Grade 6 seats in the main round, general education and students with disabilities together |
+| `listed` | Applicants who named the school anywhere on their application (the report's "total applicants") |
+| `considered` | Applicants not matched to a more preferred choice (the report's "true applicants"), published from fall 2023 on |
+| `offers` | Main round offers |
+
+`None` is a figure the DOE suppressed (fewer than six students) or did
+not publish. `DemandHistory` keys the years by DBN, keeps them
+ascending, and gives the latest year per school, which the scan rows
+carry as `LatestDemand`. `DemandFigures::offer_share` is offers per
+considered applicant, capped at one; `listed_per_seat` is listed
+applicants per seat.
+
+The figures are per school, not per program, and the DOE changed how it
+counts seats in 2023 (about 36,000 citywide in fall 2022, about 72,000 in
+fall 2023), so the page that shows the history says so. Citywide for
+fall 2025: 69,248 seats, 177,502 listings, 73,637 considered applicants
+and 51,200 offers, for 56,206 applicants.
 
 District codes drop leading zeros, so the school code `09` and the group
 text "District 9" both give `d9`.

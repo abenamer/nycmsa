@@ -151,6 +151,25 @@ read the same workbooks with a second tool and compare the stored
 values. The reader fails on a missing sheet or column, but a reordered
 or renamed value column would need this check to catch it.
 
+## Refresh the school demand history
+
+1. Run `nycmsa fetch-demand` (with Compose: `docker compose run --rm init fetch-demand`).
+2. Restart the server.
+
+Expected result: the command downloads one workbook per admissions year
+from fall 2018 to fall 2025 (8 to 14 MB each; six from the DOE InfoHub,
+fall 2020 and fall 2021 from NYC Open Data attachments), prints the
+number of schools and the span of years, and names any year it could not
+read. The scan and picker pages then show "Listed the school" and
+"Competed" for the latest year, and each school's page shows the
+history. `bootstrap` runs this step when the history is missing and
+treats a failure as a warning, so the site starts without it.
+
+When the DOE publishes a new year, add its URL to
+`adapters::infohub_demand::SOURCES` and run the refresh; the reader
+accepts both the pre-2023 layout (applicants and offers) and the current
+one (total and true applicants).
+
 ## Refresh the program profiles
 
 1. Run `nycmsa fetch-profiles` (with Compose: `docker compose run --rm init fetch-profiles`).
@@ -233,7 +252,7 @@ Recovery: if the page does not answer after fifteen minutes, read the
 cloud-init log. An image pull error means the package is private (see
 prerequisites); make it public and run `cd /opt/nycmsa && docker compose
 up -d`. A bootstrap error means a download from MySchools, NYC Open Data
-or InfoHub failed; cloud-init tries `up -d` three times a minute apart,
+or InfoHub failed (a failed demand report is only a warning); cloud-init tries `up -d` three times a minute apart,
 the daily update tries again, and `cd /opt/nycmsa && docker compose up
 -d` by hand starts the stopped `init` at once.
 The backups directory is on the same disk as the database, so copy the
