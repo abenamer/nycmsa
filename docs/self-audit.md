@@ -163,6 +163,22 @@ Same environment. No Rust code changed.
 | Favicon | An inline SVG data URI in `templates/base.html`, so no static file route is needed; the browser check confirms the `link rel="icon"` resolves to an SVG the page can load |
 | "About" notice | On the home page and in every page's footer: not a DOE website, built by a parent for his own family, nothing official, link to the code |
 
+## Local evidence: 2026-10-27 (sort by distance)
+
+Same environment. The catalog's school coordinates (the DOE's geocoded
+addresses) now reach the picker and scan tables as `data-lat` and
+`data-lon`; a "Where do you live?" box geocodes the typed address in the
+browser with the city's GeoSearch service, keeps the coordinates in
+`nycmsa.home`, fills a Distance column with straight-line miles, and
+sorts by it. The server never sees the address.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt`, `clippy -D warnings`, `cargo test --locked` | Passed; the fixture test checks that every fixture school is geocoded and that M.S. 442 sits at 40.68, -74.00 |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+| GeoSearch from this environment | Not reachable: the environment's network policy denies `geosearch.planninglabs.nyc`. The browser calls it directly, so the first real use in a browser is the test of that call; the page shows a message when the lookup fails or finds nothing. |
+| Browser check with Playwright (Chromium) | Passed with a stubbed geocoder response: typing an address fills the Distance column, sorts the picker ascending, survives a reload from `nycmsa.home`, and "Forget" clears it. |
+
 ## Remote evidence
 
 | Revision | Run | Outcome |

@@ -216,6 +216,7 @@ async fn scan_json_matches_the_python_defaults() {
     assert!(rows.len() > 40, "{}", rows.len());
     assert_eq!(rows[0]["code"], "K448S");
     assert_eq!(rows[0]["reach"], "YES all offered");
+    assert!(rows[0]["latitude"].as_f64().is_some_and(|v| v > 40.0));
 }
 
 #[tokio::test]
@@ -272,7 +273,7 @@ async fn scan_csv_has_the_python_columns() {
         Some("text/csv; charset=utf-8")
     );
     let csv = body_text(response).await;
-    assert!(csv.starts_with("district,school,code,program,method,seats,applicants,filled,group,group_order,n_groups,your_group_applied,your_group_offered,your_group_share,reach,dbn,scores_year,ela_proficient_pct,math_proficient_pct\n"));
+    assert!(csv.starts_with("district,school,code,program,method,seats,applicants,filled,group,group_order,n_groups,your_group_applied,your_group_offered,your_group_share,reach,dbn,latitude,longitude,scores_year,ela_proficient_pct,math_proficient_pct\n"));
 }
 
 #[tokio::test]
@@ -291,6 +292,11 @@ async fn picker_and_profiles_pages_render() {
     assert_eq!(response.status(), StatusCode::OK);
     let html = body_text(response).await;
     assert!(html.contains("data-code=\"K442S\""));
+    assert!(
+        html.contains("data-lat=\"40.") && html.contains("data-lon=\"-73."),
+        "school coordinates reach the picker rows"
+    );
+    assert!(html.contains("id=\"home-address\""), "the address box");
     assert!(html.contains("Dual language"), "focus chips");
     assert!(
         html.contains("guessed from the name"),

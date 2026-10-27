@@ -129,8 +129,9 @@ string the JSON endpoint uses the Python scanner's defaults, `d15,d20`,
 not FRL, and `BD`; the HTML page shows blank questions instead. The
 response lists the attributes, the FRL flag, the lottery prefix and
 fraction, and the rows in reach order. Each row also carries the school's
-`dbn`, `scores_year`, `ela_proficient_pct`, and `math_proficient_pct`.
-The CSV has the Python scanner's columns followed by those four.
+`dbn`, `latitude`, `longitude`, `scores_year`, `ela_proficient_pct`, and
+`math_proficient_pct`.
+The CSV has the Python scanner's columns followed by those six.
 
 ## Command line
 
@@ -166,9 +167,16 @@ Everything about a visitor lives in that visitor's browser, in
 | `nycmsa.pickerFilters` | The picker's filters and search text | picker |
 | `nycmsa.answers` | The other answers on the questions page | questions page, on submit |
 | `nycmsa.results` | The last 20 results: when, the answers, programs, lottery prefix, chance | result page |
+| `nycmsa.home` | The coordinates and label of the address typed to sort by distance | picker and scan page |
 
 Nothing is sent to the server until a form is submitted, and the server
-keeps nothing from it. No cookie is set. There is no analytics, no
+keeps nothing from it. The one outside call the browser makes is the
+address lookup for the distance column: it sends the typed address to
+the city's GeoSearch service (`geosearch.planninglabs.nyc`, NYC
+Department of City Planning) and keeps the coordinates it gets back.
+This site's server never sees the address. Distances are straight lines
+computed in the browser from each school's coordinates, which the
+catalog carries. No cookie is set. There is no analytics, no
 visitor statistics, and no third-party script. Every page's footer says
 so and has a "Forget everything this browser remembers" button that
 removes every `nycmsa.` key; the Reset buttons clear subsets.

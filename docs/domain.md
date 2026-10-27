@@ -224,6 +224,11 @@ from word matching, with the evidence shown.
 
 ## Catalog scan
 
+Each `CatalogProgram` carries its school's `GeoPoint` when the catalog
+has one (the DOE geocodes every school address). The server does no
+distance arithmetic: the pages print the coordinates and the browser
+measures the straight line to the family's address.
+
 `scan` reads a list of `CatalogProgram`s from the MySchools catalog. For
 each program with published seats or applicants, it selects the first
 group whose `PriorityCriterion` admits the student, reads the FRL or

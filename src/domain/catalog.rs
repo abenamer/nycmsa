@@ -274,11 +274,21 @@ pub fn combine_subjects(ela: &SubjectResults, math: &SubjectResults) -> TestResu
 }
 
 /// A program as listed in the MySchools catalog.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A point on the map, WGS 84 degrees, as the DOE's geocoder reports a
+/// school's address.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GeoPoint {
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct CatalogProgram {
     pub district: DistrictCode,
     /// The school's DBN, such as `15K442`.
     pub dbn: String,
+    /// Where the school is, when the catalog says.
+    pub location: Option<GeoPoint>,
     pub school_name: String,
     pub code: ProgramCode,
     pub program_name: String,
@@ -308,6 +318,7 @@ impl CatalogProgram {
         Self {
             district,
             dbn,
+            location: None,
             school_name,
             code,
             program_name,
@@ -317,6 +328,11 @@ impl CatalogProgram {
             all_seats_filled,
             groups,
         }
+    }
+
+    pub fn with_location(mut self, location: Option<GeoPoint>) -> Self {
+        self.location = location;
+        self
     }
 
     pub fn groups(&self) -> &[CatalogGroup] {
@@ -770,6 +786,7 @@ impl fmt::Display for Reach {
 pub struct ScanRow {
     pub district: DistrictCode,
     pub dbn: String,
+    pub location: Option<GeoPoint>,
     pub school_name: String,
     pub code: ProgramCode,
     pub program_name: String,
@@ -850,6 +867,7 @@ pub fn scan(
             Some(ScanRow {
                 district: program.district.clone(),
                 dbn: program.dbn.clone(),
+                location: program.location,
                 school_name: program.school_name.clone(),
                 code: program.code.clone(),
                 program_name: program.program_name.clone(),

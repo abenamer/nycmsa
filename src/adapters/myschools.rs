@@ -15,7 +15,7 @@ use serde::Deserialize;
 
 use crate::domain::catalog::InvalidDistrictCode;
 use crate::domain::{
-    Borough, CatalogGroup, CatalogProgram, DemandPair, DistrictCode, GroupDemandText,
+    Borough, CatalogGroup, CatalogProgram, DemandPair, DistrictCode, GeoPoint, GroupDemandText,
     InvalidProgramCode, PriorityCriterion, ProgramCode, ProgramProfile,
 };
 
@@ -58,6 +58,28 @@ struct SchoolDto {
     #[serde(default)]
     dbn: String,
     district: Option<DistrictDto>,
+    #[serde(default)]
+    address: Option<AddressDto>,
+}
+
+/// The geocoded address; MySchools gives the coordinates as strings.
+#[derive(Debug, Deserialize)]
+struct AddressDto {
+    latitude: Option<String>,
+    longitude: Option<String>,
+}
+
+fn location_of(address: Option<&AddressDto>) -> Option<GeoPoint> {
+    let address = address?;
+    let latitude: f64 = address.latitude.as_deref()?.trim().parse().ok()?;
+    let longitude: f64 = address.longitude.as_deref()?.trim().parse().ok()?;
+    if !(-90.0..=90.0).contains(&latitude) || !(-180.0..=180.0).contains(&longitude) {
+        return None;
+    }
+    Some(GeoPoint {
+        latitude,
+        longitude,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,6 +159,7 @@ fn catalog_from_entries(
     for school in schools {
         let school_name = school.school.name;
         let dbn = school.school.dbn.trim().to_uppercase();
+        let location = location_of(school.school.address.as_ref());
         let raw_code = school
             .school
             .district
@@ -172,21 +195,24 @@ fn catalog_from_entries(
                     name: g.name,
                 })
                 .collect();
-            programs.push(CatalogProgram::new(
-                district.clone(),
-                dbn.clone(),
-                title_case(before_parenthesis(&school_name)),
-                code,
-                before_parenthesis(&entry.name).to_owned(),
-                entry
-                    .admissions_method
-                    .and_then(|m| m.name)
-                    .unwrap_or_default(),
-                general.as_ref().and_then(|g| g.seats),
-                general.as_ref().and_then(|g| g.applicants),
-                general.as_ref().and_then(|g| g.all_seats_filled),
-                groups,
-            ));
+            programs.push(
+                CatalogProgram::new(
+                    district.clone(),
+                    dbn.clone(),
+                    title_case(before_parenthesis(&school_name)),
+                    code,
+                    before_parenthesis(&entry.name).to_owned(),
+                    entry
+                        .admissions_method
+                        .and_then(|m| m.name)
+                        .unwrap_or_default(),
+                    general.as_ref().and_then(|g| g.seats),
+                    general.as_ref().and_then(|g| g.applicants),
+                    general.as_ref().and_then(|g| g.all_seats_filled),
+                    groups,
+                )
+                .with_location(location),
+            );
         }
     }
     Ok(programs)
@@ -530,6 +556,16 @@ mod tests {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/myschools_d15_d20.json");
         let d15_d20 = load_catalog(&path).expect("loads");
         assert!(d15_d20.len() > 50, "{}", d15_d20.len());
+        let located = d15_d20.iter().filter(|p| p.location.is_some()).count();
+        assert_eq!(located, d15_d20.len(), "every fixture school is geocoded");
+        let ms442 = d15_d20
+            .iter()
+            .find(|p| p.dbn == "15K442")
+            .expect("M.S. 442 is in the fixture")
+            .location
+            .expect("geocoded");
+        assert!((ms442.latitude - 40.6562).abs() < 0.001, "{ms442:?}");
+        assert!((ms442.longitude + 73.9826).abs() < 0.001, "{ms442:?}");
         let text = std::fs::read_to_string(&path).expect("reads");
         let documents: Vec<serde_json::Value> = serde_json::from_str(&text).expect("json");
         assert_eq!(catalog_from_documents(&documents).expect("parses"), d15_d20);
