@@ -118,11 +118,28 @@ thread for the list.
 | `nycmsa reclassify-profiles` on the stored 784 profiles | Passed. The snapshot source carries one `(reclassified)` suffix after two runs. Tags at or above the 0.5 threshold: Zoned 236, Arts 216, STEM 112, Dual language 59, Humanities 59 (was 62 before "language arts" and "social studies" stopped counting), Honors 39, Careers 6; 237 programs General only. |
 | Refresh with a failing school | Covered by two unit tests on `RefreshProfiles`: one failed lookup is skipped, counted, and named in the snapshot source; when every lookup fails nothing is saved. The live path was not re-run. |
 
+## Local evidence: 2026-10-27 (picker arrows and sorting)
+
+Same environment. The picker's move-up and move-down buttons rendered
+white on white because the page-wide `button` rule sets white text and
+the picker rule cleared only the background; the fix sets the text color
+explicitly. The picker table now shares the scan page's sort script
+(`templates/sortable.html`).
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt`, `clippy -D warnings`, `cargo test` | Passed: 106 unit tests, 14 HTTP tests; 2 ignored |
+| `python scripts/check_docs.py` | Passed |
+| Browser check with Playwright (Chromium) against `nycmsa serve` on the local database, 662 programs | Passed: the move-up button's computed color is the ink color `rgb(27, 31, 36)` on a transparent background; moving the second chosen program up swaps the two and the order survives a reload; two clicks on "Seats" sort 662 rows descending (581, 392, 385, ...) with the header marked `desc`; one click on "ELA" sorts ascending from 8.5% to 97.9% with the blank cells last. The script is not checked in; it lives in the session's scratch directory. |
+| Code review on pull request 2 | Five findings, all applied: the arrow styling is scoped to the move buttons so × keeps its own look; the sort script uses the column's `cellIndex`, computes each row's key once, and takes Enter or Space on a focused heading with `aria-sort`; one `ScoreCell { shown, raw }` type serves both the scan and picker rows. |
+| Browser check after the review fixes | Passed: × is muted grey at 1.1rem and turns red on hover; the arrows are ink at 0.8rem; focusing "Seats" and pressing Enter twice sorts 662 rows descending with `aria-sort="descending"`, `tabindex="0"` and `role="button"`; Space on "ELA" sorts ascending with blanks last and clears the "Seats" marker; the scan page's "Seats" heading still sorts 642 rows. |
+
 ## Remote evidence
 
 | Revision | Run | Outcome |
 | --- | --- | --- |
 | adf9f22 (pull request 1, 2026-10-27) | GitHub Actions run 40453826962 (pull request) and 40453821113 (push) | Passed: `docs`, `rust` (fmt, check, clippy, tests, both PostgreSQL integration tests against the `postgres:17` service, `cargo audit`), `docker` (image build and `sim --trials 1000`) |
+| 93a411c (pull request 2, 2026-10-27) | GitHub Actions run 40456654387 (pull request) and 40456650876 (push) | Passed: the same three jobs |
 
 The two earlier pushes on the same pull request failed in `rust`; the
 local-evidence table above records why and the fix for each. A commit

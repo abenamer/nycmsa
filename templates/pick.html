@@ -2,7 +2,7 @@
 {% block title %}Choose programs{% endblock %}
 {% block content %}
 <h1>Choose the programs to rank</h1>
-<p class="muted">Click a program code to add it to your list. Drag order with the arrows, remove with ×. Your list is remembered in this browser until you reset it.</p>
+<p class="muted">Click a program code to add it to your list. Move a program up or down with the arrows, remove it with ×. Your list is remembered in this browser until you reset it.</p>
 
 <div class="picker">
 <div class="picker-list">
@@ -45,21 +45,21 @@
     <label class="chip"><input type="radio" name="picks" value="screened"><span>Screened test</span></label>
   </div>
 </fieldset>
-<p class="muted"><span id="shown"></span> programs shown. {% if let Some(y) = scores_year %}ELA and Math are the share of the school's students at proficiency on the {{ y }} state tests.{% endif %}</p>
-<table id="programs">
+<p class="muted"><span id="shown"></span> programs shown. Click a column heading to sort. {% if let Some(y) = scores_year %}ELA and Math are the share of the school's students at proficiency on the {{ y }} state tests.{% endif %}</p>
+<table id="programs" class="sortable">
   <thead><tr><th>Code</th><th>School / program</th><th>District</th><th>Picks by</th><th>Kind</th><th class="num">Seats</th><th class="num">Applicants</th><th class="num">ELA</th><th class="num">Math</th></tr></thead>
   <tbody>
   {% for r in rows %}
     <tr data-code="{{ r.code }}" data-district="{{ r.district }}" data-focus="{{ r.focus_slugs }}" data-screened="{{ r.screened }}" data-text="{{ r.school }} {{ r.program }} {{ r.code }}">
       <td><button type="button" class="code" data-code="{{ r.code }}">{{ r.code }}</button></td>
       <td>{{ r.school }}<div class="hint">{{ r.program }}</div></td>
-      <td>{{ r.district }} <small class="muted">{{ r.borough }}</small></td>
+      <td data-v="{{ r.district }}">{{ r.district }} <small class="muted">{{ r.borough }}</small></td>
       <td>{{ r.picks_by }}</td>
       <td><a href="/profiles?district={{ r.district }}#{{ r.code }}" class="muted">{{ r.focus_labels }}</a></td>
-      <td class="num">{{ r.seats }}</td>
-      <td class="num">{{ r.applicants }}</td>
-      <td class="num">{{ r.ela }}</td>
-      <td class="num">{{ r.math }}</td>
+      <td class="num" data-v="{{ r.seats }}">{{ r.seats }}</td>
+      <td class="num" data-v="{{ r.applicants }}">{{ r.applicants }}</td>
+      <td class="num" data-v="{{ r.ela.raw }}">{{ r.ela.shown }}</td>
+      <td class="num" data-v="{{ r.math.raw }}">{{ r.math.shown }}</td>
     </tr>
   {% endfor %}
   </tbody>
@@ -67,6 +67,7 @@
 </div>
 </div>
 {% include "caveats.html" %}
+{% include "sortable.html" %}
 <script>
 (function () {
   var KEY = 'nycmsa.ranking', FKEY = 'nycmsa.pickerFilters';

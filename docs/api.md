@@ -32,7 +32,7 @@ address is a deployment choice, not an authentication check.
 | `POST /simulate` | Form submit | 303 to `/runs/{id}` | 422 HTML with the message |
 | `GET /runs/{id}` | Report page | 200 HTML | 404 |
 | `GET /scan` | Scan questions and results | 200 HTML | 422 HTML |
-| `GET /pick` | Program picker: every program with district, kind, and screened filters; the chosen list is kept in the browser | 200 HTML | |
+| `GET /pick` | Program picker: every program in a sortable table with district, kind, and screened filters; the chosen list is kept in the browser | 200 HTML | |
 | `GET /profiles` | What each program is about, with tags and evidence, filtered by repeated `district` keys | 200 HTML | |
 | `GET /programs` | Program definitions, filtered by repeated `district` keys | 200 HTML | |
 | `POST /api/simulate` | Run a simulation | 201 JSON run | 422 |

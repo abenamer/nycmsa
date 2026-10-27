@@ -1,0 +1,40 @@
+<script>
+// Click (or Enter/Space on) a column heading to sort its table. A cell's
+// `data-v` attribute is its sort value when the text is not the value;
+// an empty `data-v` means unknown and sorts last in either direction.
+document.querySelectorAll('table.sortable th').forEach(function (th) {
+  th.title = 'Click to sort';
+  th.tabIndex = 0;
+  th.setAttribute('role', 'button');
+  var sort = function () {
+    var table = th.closest('table');
+    var body = table.tBodies[0];
+    var column = th.cellIndex;
+    var direction = th.getAttribute('data-dir') === 'asc' ? 'desc' : 'asc';
+    table.querySelectorAll('th').forEach(function (h) { h.removeAttribute('data-dir'); h.removeAttribute('aria-sort'); });
+    th.setAttribute('data-dir', direction);
+    th.setAttribute('aria-sort', direction === 'asc' ? 'ascending' : 'descending');
+    var keyed = Array.prototype.map.call(body.rows, function (row) {
+      var cell = row.cells[column];
+      var raw = cell.getAttribute('data-v');
+      var key;
+      if (raw === null) { key = cell.textContent.trim().toLowerCase(); }
+      else { var number = parseFloat(raw); key = isNaN(number) ? null : number; }
+      return { row: row, key: key };
+    });
+    keyed.sort(function (a, b) {
+      var x = a.key, y = b.key;
+      if (x === null && y === null) { return 0; }
+      if (x === null) { return 1; }
+      if (y === null) { return -1; }
+      if (typeof x === 'number' && typeof y === 'number') { return direction === 'asc' ? x - y : y - x; }
+      return direction === 'asc' ? String(x).localeCompare(String(y)) : String(y).localeCompare(String(x));
+    });
+    keyed.forEach(function (k) { body.appendChild(k.row); });
+  };
+  th.addEventListener('click', sort);
+  th.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sort(); }
+  });
+});
+</script>
