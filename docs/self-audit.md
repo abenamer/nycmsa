@@ -227,6 +227,20 @@ The visitor's home never goes into a link. The scan JSON and CSV carry
 | Code review on pull request 9 | Seven findings, all applied: the state-and-ZIP rule keys on the part's shape and a repeated tail is kept once (one catalog address had one); doc comments on the right functions; `rel="noopener noreferrer"` on the links; a unit test for the address-text fallback; one `map_links.html` include instead of two copies; the fixture test binds the program once and asserts the exact address; `with_address` borrows. |
 | Security review on pull request 9 | No findings. Checked: the address reaches the page only through askama's escaping and the link hosts are constants, so no attribute break-out, scheme injection or redirect; the default referrer policy sends only the origin to Google, and `noreferrer` now sends nothing; the CSV's free-text columns predate this change and come from the DOE; nothing reads the stored home. |
 
+## Local evidence: 2026-10-27 (home page heading)
+
+Same environment, revision on branch `claude/home-heading` over `main`
+b23da1e. The home page now opens with the heading "NYC Middle School
+Admissions" and the subheading "What are the chances of your child
+getting into the NYC middle school of your choice?"; the browser title
+matches the heading. No Rust code changed outside the test.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt --all`, `cargo check --all-targets`, `cargo clippy --all-targets -- -D warnings` | Passed |
+| `cargo test` | 102 unit tests and 14 HTTP tests passed; the blank-home test asserts the heading and subheading |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+
 ## Remote evidence
 
 | Revision | Run | Outcome |

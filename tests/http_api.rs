@@ -63,6 +63,10 @@ async fn home_page_opens_blank_and_states_the_privacy_rule() {
     let response = app().oneshot(get("/")).await.expect("response");
     assert_eq!(response.status(), StatusCode::OK);
     let html = body_text(response).await;
+    assert!(html.contains("<h1>NYC Middle School Admissions</h1>"));
+    assert!(html.contains(
+        "What are the chances of your child getting into the NYC middle school of your choice?"
+    ));
     assert!(
         html.contains("name=\"lottery_number\" value=\"\""),
         "no lottery prefix prefilled"
