@@ -15,8 +15,9 @@ typed errors, and an OKF documentation bundle in [`docs/`](docs/index.md).
 
 ## What the web page asks
 
-- The first two digits of your lottery number (the first two hex
-  characters place the number to 0.4%).
+- The first two digits of the random number the NYC DOE assigned your
+  child, shown in your MySchools account (the first two hex characters
+  place the number to 0.4%).
 - How high your child will place on a screened test: don't know, or a
   quarter of the field.
 - Which school district you live in (any of the 32), free or reduced-price
