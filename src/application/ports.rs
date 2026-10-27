@@ -5,9 +5,7 @@ use std::num::NonZeroU64;
 use std::time::SystemTime;
 
 use crate::domain::ProgramProfile;
-use crate::domain::{
-    DistrictCode, ProfileText, ProgramCode, ProgramDefinitions, Report, Student, TestResults,
-};
+use crate::domain::{DistrictCode, ProgramDefinitions, Report, Student, TestResults};
 
 use super::download::DistrictFilter;
 
@@ -256,28 +254,12 @@ pub trait StudentDefaultsStore {
     async fn latest_student_defaults(&self) -> Result<Option<Stored<Student>>, RepositoryError>;
 }
 
-/// Everything MySchools says about one program, before classification.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProgramDetails {
-    pub code: ProgramCode,
-    pub dbn: String,
-    pub program_name: String,
-    pub school_name: String,
-    pub method: String,
-    pub description: String,
-    pub overview: String,
-    pub academic_opportunities: String,
-    pub art_courses: String,
-    pub language_classes: String,
-    /// The texts the classification reads.
-    pub texts: Vec<ProfileText>,
-}
-
-/// Outbound port: the detail document of one school, as program details.
+/// Outbound port: the detail document of one school, as one unscored
+/// profile per program. The use case runs the classification.
 pub trait ProgramDetailsDownloader {
     // Awaited on the main task; no `Send` bound is needed.
     #[allow(async_fn_in_trait)]
-    async fn download(&self, school_id: u64) -> Result<Vec<ProgramDetails>, DownloadError>;
+    async fn download(&self, school_id: u64) -> Result<Vec<ProgramProfile>, DownloadError>;
 }
 
 /// Outbound port: versioned program profiles.

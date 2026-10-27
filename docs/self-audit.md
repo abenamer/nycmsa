@@ -101,6 +101,20 @@ Same environment.
 | Pages | Passed: `/pick` and `/profiles` render from the database; the picker's ranking reaches the questions page through `?ranking=` |
 | Picker and form memory in the browser | Not run: no browser automation in this check. The JavaScript is small and hand-reviewed; a browser test is a gap. |
 
+## Local evidence: 2026-10-27 (code review fixes on pull request 1)
+
+Same environment. The ten findings from the inline code review on the
+first pull request were applied in one change; see the pull request
+thread for the list.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt`, `clippy -D warnings`, `cargo test` | Passed: 107 unit tests, 14 HTTP tests; 2 ignored |
+| `cargo test --test postgres_reference --test postgres_runs -- --ignored` | Passed |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed: 36 doc tests |
+| `nycmsa reclassify-profiles` on the stored 784 profiles | Passed. The snapshot source carries one `(reclassified)` suffix after two runs. Tags at or above the 0.5 threshold: Zoned 236, Arts 216, STEM 112, Dual language 59, Humanities 59 (was 62 before "language arts" and "social studies" stopped counting), Honors 39, Careers 6; 237 programs General only. |
+| Refresh with a failing school | Covered by two unit tests on `RefreshProfiles`: one failed lookup is skipped, counted, and named in the snapshot source; when every lookup fails nothing is saved. The live path was not re-run. |
+
 ## Remote evidence
 
 None yet. After the first push, record here the GitHub Actions run that

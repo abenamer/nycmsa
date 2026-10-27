@@ -16,7 +16,7 @@ use serde::Deserialize;
 use crate::domain::catalog::InvalidDistrictCode;
 use crate::domain::{
     Borough, CatalogGroup, CatalogProgram, DemandPair, DistrictCode, GroupDemandText,
-    InvalidProgramCode, PriorityCriterion, ProfileText, ProgramCode,
+    InvalidProgramCode, PriorityCriterion, ProgramCode, ProgramProfile,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -516,17 +516,6 @@ mod tests {
         assert!(k187a
             .overview
             .starts_with("Our school is a place of wonder"));
-        let labels: Vec<&str> = k187a.texts.iter().map(|t| t.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            vec![
-                "program name",
-                "program description",
-                "school name",
-                "school overview",
-                "academic opportunities",
-            ]
-        );
         assert!(k187a.art_courses.contains("Chorus"));
         let k187c = details
             .iter()
@@ -587,11 +576,12 @@ fn names(items: &[NamedDto]) -> String {
         .join(", ")
 }
 
-/// Turns a school detail document into one [`ProgramDetails`] per program,
-/// with every descriptive text labelled by its origin.
+/// Turns a school detail document into one unscored [`ProgramProfile`] per
+/// program. The use case scores it from the stored texts, so a fresh fetch
+/// and a reclassification read the same texts.
 pub fn program_details_from_document(
     document: &serde_json::Value,
-) -> Result<Vec<crate::application::ProgramDetails>, CatalogLoadError> {
+) -> Result<Vec<ProgramProfile>, CatalogLoadError> {
     let detail: DetailDto = serde_json::from_value(document.clone())?;
     let school_name = title_case(before_parenthesis(&detail.school.name));
     let dbn = detail.school.dbn.trim().to_uppercase();
@@ -599,13 +589,6 @@ pub fn program_details_from_document(
     let academic_opportunities = names(&detail.academic_opportunities);
     let art_courses = names(&detail.art_courses);
     let language_classes = names(&detail.language_classes);
-    // Course lists are kept for display only: nearly every school lists
-    // art courses, so they would tag everything as Arts.
-    let shared = [
-        ("school name", school_name.clone()),
-        ("school overview", overview.clone()),
-        ("academic opportunities", academic_opportunities.clone()),
-    ];
     detail
         .programs
         .into_iter()
@@ -616,34 +599,19 @@ pub fn program_details_from_document(
                     source,
                 }
             })?;
-            let program_name = before_parenthesis(&p.name).to_owned();
-            let description = p.description.unwrap_or_default().trim().to_owned();
-            let mut texts = vec![
-                ProfileText {
-                    label: "program name".to_owned(),
-                    text: program_name.clone(),
-                },
-                ProfileText {
-                    label: "program description".to_owned(),
-                    text: description.clone(),
-                },
-            ];
-            texts.extend(shared.iter().map(|(label, text)| ProfileText {
-                label: (*label).to_owned(),
-                text: text.clone(),
-            }));
-            Ok(crate::application::ProgramDetails {
+            Ok(ProgramProfile {
                 code,
                 dbn: dbn.clone(),
-                program_name,
+                program_name: before_parenthesis(&p.name).to_owned(),
                 school_name: school_name.clone(),
                 method: p.admissions_method.and_then(|m| m.name).unwrap_or_default(),
-                description,
+                description: p.description.unwrap_or_default().trim().to_owned(),
                 overview: overview.clone(),
                 academic_opportunities: academic_opportunities.clone(),
                 art_courses: art_courses.clone(),
                 language_classes: language_classes.clone(),
-                texts,
+                scores: Vec::new(),
+                evidence: Vec::new(),
             })
         })
         .collect()

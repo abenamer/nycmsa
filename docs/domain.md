@@ -188,15 +188,18 @@ Every match carries the weight of the text it was found in:
 | --- | --- |
 | Admissions method | 0.7 |
 | Program name | 0.6 |
-| Program description | 0.5 |
+| Program description | 0.45 |
 | School name | 0.5 |
 | Academic opportunities | 0.25 |
 | School overview | 0.15 |
 
 A kind's confidence is `1 - Π(1 - weight)` over its distinct matches, so
 one strong match or several weak ones both raise it: a program name
-match alone gives 60%, five different STEM words in the overview give
-56%, one overview word gives 15%. A kind is a tag at 50% or more
+match alone gives 60%, one description word 45% (below the threshold, so
+"math" in a course list does not tag STEM), two description words 70%,
+five different STEM words in the overview 56%, one overview word 15%.
+The subject names "language arts" and "social studies" are removed
+before matching. A kind is a tag at 50% or more
 (`TAG_THRESHOLD`); a program with no tag is `General`. The school
 overview weighs little because it describes the whole school: a first
 version that treated it like the program texts tagged most programs with

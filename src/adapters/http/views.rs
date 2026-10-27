@@ -10,8 +10,8 @@ use crate::adapters::dto::StudentDto;
 use crate::application::Run;
 use crate::application::{Clock, RunRepository};
 use crate::domain::{
-    classify_focus, Borough, DistrictCode, ProgramDefinitions, ProgramFocus, ProgramRow, Reach,
-    ScanRequest, ScanRow, SelectionKind, WaitlistNumbers, TAG_THRESHOLD,
+    Borough, DistrictCode, ProgramDefinitions, ProgramFocus, ProgramRow, Reach, ScanRequest,
+    ScanRow, SelectionKind, WaitlistNumbers, TAG_THRESHOLD,
 };
 
 use super::choices::{attribute_label, OutlookChoice, TalentTestChoice, WaitlistChoice};
@@ -316,7 +316,7 @@ impl PickerPage {
         C: Clock,
     {
         let definitions = state.simulate.default_programs();
-        let mut scores_year = None;
+        let scores_year = state.scan.scores_year();
         let rows = state
             .scan
             .programs()
@@ -324,13 +324,7 @@ impl PickerPage {
             .filter_map(|p| {
                 let program = definitions.get(&p.code)?;
                 let scores = state.scan.scores_for(&p.dbn);
-                if let Some(s) = scores {
-                    scores_year = Some(s.year);
-                }
-                let focus = match state.profiles.get(p.code.as_str()) {
-                    Some(profile) => profile.tags(),
-                    None => classify_focus(&p.program_name, &p.school_name, &p.method),
-                };
+                let focus = state.profiles.tags(p.code.as_str());
                 Some(PickRow {
                     code: p.code.to_string(),
                     district: p.district.to_string(),
@@ -776,6 +770,7 @@ impl ScanPage {
         districts: &[DistrictCode],
         catalog_size: usize,
         schools_with_scores: usize,
+        scores_year: Option<u32>,
         error: Option<String>,
     ) -> Self {
         let definitions = ProgramDefinitions::default();
@@ -785,12 +780,10 @@ impl ScanPage {
             .flat_map(|a| a.split(',').map(|s| s.trim().to_owned()))
             .collect();
         let district_chips = district_chips(districts, &selected);
-        let scores_year =
-            result.and_then(|(_, rows)| rows.iter().find_map(|r| r.scores.map(|s| s.year)));
         let scores_line = match (schools_with_scores, scores_year) {
             (0, _) => "No state test results are loaded; run `nycmsa fetch-scores`.".to_owned(),
             (_, Some(year)) => format!(
-                "ELA and Math show the share of the school's students at proficiency (levels 3 and 4) on the {year} New York State tests, from NYC Open Data. Blank means the DOE suppressed the figure or did not report it."
+                "ELA and Math show the share of the school's students at proficiency (levels 3 and 4) on the {year} New York State tests, as published by the NYC DOE. Blank means the DOE suppressed the figure or did not report it."
             ),
             (_, None) => "State test results are loaded but none of these schools has a figure.".to_owned(),
         };

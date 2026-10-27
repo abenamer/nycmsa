@@ -6,9 +6,9 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use crate::application::{
-    CatalogDownloader, CatalogSnapshot, DistrictFilter, DownloadError, ProgramDetails,
-    ProgramDetailsDownloader,
+    CatalogDownloader, CatalogSnapshot, DistrictFilter, DownloadError, ProgramDetailsDownloader,
 };
+use crate::domain::ProgramProfile;
 
 use super::myschools::program_details_from_document;
 
@@ -90,7 +90,7 @@ impl CatalogDownloader for MySchoolsApiClient {
 }
 
 impl ProgramDetailsDownloader for MySchoolsApiClient {
-    async fn download(&self, school_id: u64) -> Result<Vec<ProgramDetails>, DownloadError> {
+    async fn download(&self, school_id: u64) -> Result<Vec<ProgramProfile>, DownloadError> {
         let url = format!("{}{school_id}/", self.base_url);
         let response = self
             .client

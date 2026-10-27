@@ -489,9 +489,19 @@ const HONORS_KEYWORDS: [Keyword; 7] = [
 ];
 const ZONED_KEYWORDS: [Keyword; 1] = [Word("zoned")];
 
-/// Lowercase word tokens: runs of letters and digits.
+/// Subject names that contain a keyword without meaning the kind:
+/// "English Language Arts" is not an arts focus. They are removed before
+/// matching.
+const SUBJECT_PHRASES: [&str; 2] = ["language arts", "social studies"];
+
+/// Lowercase word tokens: runs of letters and digits, after the subject
+/// phrases are removed.
 fn tokens(text: &str) -> Vec<String> {
-    text.to_lowercase()
+    let mut lower = text.to_lowercase();
+    for phrase in SUBJECT_PHRASES {
+        lower = lower.replace(phrase, " ");
+    }
+    lower
         .split(|c: char| !c.is_alphanumeric())
         .filter(|t| !t.is_empty())
         .map(str::to_owned)
@@ -522,7 +532,7 @@ pub fn source_weight(label: &str) -> f64 {
     match label {
         "admissions method" => 0.7,
         "program name" => 0.6,
-        "program description" => 0.5,
+        "program description" => 0.45,
         "school name" => 0.5,
         "academic opportunities" => 0.25,
         "school overview" => 0.15,
@@ -586,17 +596,7 @@ pub struct ProgramProfile {
 impl ProgramProfile {
     /// The kinds at or above [`TAG_THRESHOLD`], or `General` when none is.
     pub fn tags(&self) -> Vec<ProgramFocus> {
-        let tags: Vec<ProgramFocus> = self
-            .scores
-            .iter()
-            .filter(|s| s.confidence >= TAG_THRESHOLD)
-            .map(|s| s.focus)
-            .collect();
-        if tags.is_empty() {
-            vec![ProgramFocus::General]
-        } else {
-            tags
-        }
+        tags_of(&self.scores)
     }
 
     /// The texts the classification reads, rebuilt from the stored fields.
@@ -1607,6 +1607,28 @@ mod tests {
         assert_eq!(tags_of(&zoned), vec![ProgramFocus::Zoned]);
         assert_eq!(evidence[0].label, "admissions method");
         assert!((zoned[0].confidence - 0.7).abs() < 1e-9);
+    }
+
+    #[test]
+    fn subject_names_and_single_description_words_do_not_tag() {
+        let description = ProfileText {
+            label: "program description".to_owned(),
+            text: "Students take English Language Arts, math, and social studies.".to_owned(),
+        };
+        let (scores, _) = classify_profile(&[description], "Open");
+        assert!(
+            !scores.iter().any(|s| s.focus == ProgramFocus::Arts),
+            "language arts is a subject, not an arts focus: {scores:?}"
+        );
+        let stem = scores
+            .iter()
+            .find(|s| s.focus == ProgramFocus::Stem)
+            .expect("math is a STEM word");
+        assert!(
+            stem.confidence < TAG_THRESHOLD,
+            "one description word is not a tag"
+        );
+        assert_eq!(tags_of(&scores), vec![ProgramFocus::General]);
     }
 
     #[test]

@@ -1,54 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Your chances<script>
-(function () {
-  var KEY = 'nycmsa.answers', RKEY = 'nycmsa.ranking';
-  var form = document.querySelector('form[action="/simulate"]');
-  var ranking = document.getElementById('ranking');
-  function load(key) { try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; } }
-  function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} }
-  function codes() { return ranking.value.split(/[\s,]+/).filter(function (c) { return c; }); }
-  function renderChips() {
-    var box = document.getElementById('ranking-chips');
-    box.innerHTML = '';
-    codes().forEach(function (code, i) {
-      var span = document.createElement('span');
-      span.className = 'code-chip';
-      span.textContent = (i + 1) + '. ' + code + ' ';
-      var x = document.createElement('button');
-      x.type = 'button'; x.className = 'x'; x.title = 'Remove ' + code; x.textContent = '×';
-      x.onclick = function () { var c = codes(); c.splice(i, 1); ranking.value = c.join(', '); save(RKEY, c); renderChips(); };
-      span.appendChild(x);
-      box.appendChild(span);
-    });
-  }
-  var fromPicker = new URLSearchParams(location.search).has('ranking');
-  var saved = load(KEY);
-  if (saved && !document.querySelector('.error')) {
-    Array.prototype.forEach.call(form.elements, function (el) {
-      if (!el.name || !(el.name in saved)) return;
-      if (el.type === 'checkbox' || el.type === 'radio') { el.checked = saved[el.name].indexOf(el.value) >= 0; }
-      else if (!(el.name === 'ranking' && fromPicker)) { el.value = saved[el.name]; }
-    });
-  }
-  if (!fromPicker) { var picked = load(RKEY); if (picked && picked.length && !saved) { ranking.value = picked.join(', '); } }
-  ranking.addEventListener('input', function () { save(RKEY, codes()); renderChips(); });
-  form.addEventListener('submit', function () {
-    var data = {};
-    Array.prototype.forEach.call(form.elements, function (el) {
-      if (!el.name) return;
-      if (el.type === 'checkbox' || el.type === 'radio') { if (!data[el.name]) data[el.name] = []; if (el.checked) data[el.name].push(el.value); }
-      else { data[el.name] = el.value; }
-    });
-    save(KEY, data); save(RKEY, codes());
-  });
-  document.getElementById('reset-answers').onclick = function () {
-    try { localStorage.removeItem(KEY); localStorage.removeItem(RKEY); localStorage.removeItem('nycmsa.pickerFilters'); } catch (e) {}
-    location.href = '/';
-  };
-  renderChips();
-})();
-</script>
-{% endblock %}
+{% block title %}Your chances{% endblock %}
 {% block content %}
 <h1>What are our chances?</h1>
 <p class="muted">Answer a few questions and we replay the middle school admissions lottery 200,000 times with your child's number. You get one chance of an offer for each program on your list.</p>
@@ -145,6 +96,8 @@
 {% endif %}
 <script>
 (function () {
+  // The ranking has one home: nycmsa.ranking, shared with the picker.
+  // nycmsa.answers keeps every other field.
   var KEY = 'nycmsa.answers', RKEY = 'nycmsa.ranking';
   var form = document.querySelector('form[action="/simulate"]');
   var ranking = document.getElementById('ranking');
@@ -165,21 +118,26 @@
       box.appendChild(span);
     });
   }
+  var showingError = !!document.querySelector('.error');
   var fromPicker = new URLSearchParams(location.search).has('ranking');
-  var saved = load(KEY);
-  if (saved && !document.querySelector('.error')) {
-    Array.prototype.forEach.call(form.elements, function (el) {
-      if (!el.name || !(el.name in saved)) return;
-      if (el.type === 'checkbox' || el.type === 'radio') { el.checked = saved[el.name].indexOf(el.value) >= 0; }
-      else if (!(el.name === 'ranking' && fromPicker)) { el.value = saved[el.name]; }
-    });
+  if (!showingError) {
+    var saved = load(KEY);
+    if (saved) {
+      Array.prototype.forEach.call(form.elements, function (el) {
+        if (!el.name || el.name === 'ranking' || !(el.name in saved)) return;
+        if (el.type === 'checkbox' || el.type === 'radio') { el.checked = saved[el.name].indexOf(el.value) >= 0; }
+        else { el.value = saved[el.name]; }
+      });
+    }
+    var picked = load(RKEY);
+    if (fromPicker) { save(RKEY, codes()); }
+    else if (picked && picked.length) { ranking.value = picked.join(', '); }
   }
-  if (!fromPicker) { var picked = load(RKEY); if (picked && picked.length && !saved) { ranking.value = picked.join(', '); } }
   ranking.addEventListener('input', function () { save(RKEY, codes()); renderChips(); });
   form.addEventListener('submit', function () {
     var data = {};
     Array.prototype.forEach.call(form.elements, function (el) {
-      if (!el.name) return;
+      if (!el.name || el.name === 'ranking') return;
       if (el.type === 'checkbox' || el.type === 'radio') { if (!data[el.name]) data[el.name] = []; if (el.checked) data[el.name].push(el.value); }
       else { data[el.name] = el.value; }
     });

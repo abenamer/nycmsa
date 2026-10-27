@@ -189,7 +189,7 @@ async fn fetch_scores(
 
 async fn fetch_profiles(reference: PostgresReferenceData) -> Result<String, AppError> {
     let client = MySchoolsApiClient::new(DEFAULT_BASE_URL.to_owned(), Duration::from_millis(250))?;
-    let count = RefreshProfiles::new(client, reference, SystemClock)
+    let outcome = RefreshProfiles::new(client, reference, SystemClock)
         .execute(
             &format!("MySchools API {DEFAULT_BASE_URL}<school id>/"),
             |done, total| {
@@ -199,7 +199,21 @@ async fn fetch_profiles(reference: PostgresReferenceData) -> Result<String, AppE
             },
         )
         .await?;
-    Ok(format!("stored profiles for {count} programs\n"))
+    for (id, reason) in &outcome.failed_schools {
+        tracing::warn!(school_id = id, %reason, "school lookup failed; its programs have no profile");
+    }
+    Ok(format!(
+        "stored profiles for {} programs{}\n",
+        outcome.profiles,
+        if outcome.failed_schools.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " ({} school lookups failed, see the log)",
+                outcome.failed_schools.len()
+            )
+        }
+    ))
 }
 
 /// `nycmsa reclassify-profiles`: apply the current rules to the stored
@@ -376,8 +390,8 @@ where
     AppState {
         simulate: Arc::new(SimulateStudent::new(programs, repository.clone(), clock)),
         runs: Arc::new(RunQueries::new(repository)),
+        profiles: Arc::new(ProfileBook::new(profiles, &catalog)),
         scan: Arc::new(ScanCatalog::new(catalog, results)),
-        profiles: Arc::new(ProfileBook::new(profiles)),
         default_student: Arc::new(student),
         cpu_permits: Arc::new(Semaphore::new(limits.cpu_permits.max(1))),
         recent_runs: limits.recent_runs,

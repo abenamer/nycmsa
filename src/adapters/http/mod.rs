@@ -61,23 +61,46 @@ impl Default for HttpLimits {
     }
 }
 
-/// The stored program profiles, by code.
+/// The stored program profiles by code, with the kind tags of every
+/// catalog program computed once: from the profile when there is one,
+/// else from the names and method.
 pub struct ProfileBook {
     by_code: std::collections::BTreeMap<String, crate::domain::ProgramProfile>,
+    tags: std::collections::BTreeMap<String, Vec<crate::domain::ProgramFocus>>,
 }
 
 impl ProfileBook {
-    pub fn new(profiles: Vec<crate::domain::ProgramProfile>) -> Self {
-        Self {
-            by_code: profiles
-                .into_iter()
-                .map(|p| (p.code.as_str().to_owned(), p))
-                .collect(),
-        }
+    pub fn new(
+        profiles: Vec<crate::domain::ProgramProfile>,
+        catalog: &[crate::domain::CatalogProgram],
+    ) -> Self {
+        let by_code: std::collections::BTreeMap<String, crate::domain::ProgramProfile> = profiles
+            .into_iter()
+            .map(|p| (p.code.as_str().to_owned(), p))
+            .collect();
+        let tags = catalog
+            .iter()
+            .map(|p| {
+                let code = p.code.as_str().to_owned();
+                let tags = match by_code.get(&code) {
+                    Some(profile) => profile.tags(),
+                    None => {
+                        crate::domain::classify_focus(&p.program_name, &p.school_name, &p.method)
+                    }
+                };
+                (code, tags)
+            })
+            .collect();
+        Self { by_code, tags }
     }
 
     pub fn get(&self, code: &str) -> Option<&crate::domain::ProgramProfile> {
         self.by_code.get(code)
+    }
+
+    /// The kind tags of a catalog program.
+    pub fn tags(&self, code: &str) -> &[crate::domain::ProgramFocus] {
+        self.tags.get(code).map_or(&[], Vec::as_slice)
     }
 
     pub fn all(&self) -> impl Iterator<Item = &crate::domain::ProgramProfile> {
@@ -595,6 +618,7 @@ where
                 &districts,
                 state.scan.program_count(),
                 state.scan.schools_with_scores(),
+                state.scan.scores_year(),
                 None,
             );
             Ok(page(&template)?.into_response())
@@ -606,6 +630,7 @@ where
                 &districts,
                 state.scan.program_count(),
                 state.scan.schools_with_scores(),
+                state.scan.scores_year(),
                 Some(error.to_string()),
             );
             Ok((StatusCode::UNPROCESSABLE_ENTITY, page(&template)?).into_response())
