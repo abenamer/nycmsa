@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 askama = "0.14"
 async-trait = "0.1"
+bytes = "1"
 calamine = { version = "0.37", default-features = false }
 axum = { version = "0.8", features = ["form", "json", "query"] }
 clap = { version = "4", features = ["derive", "env"] }

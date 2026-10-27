@@ -19,12 +19,13 @@
 
 use std::collections::BTreeMap;
 use std::io::{Read, Seek};
-use std::time::Duration;
 
 use calamine::{Data, Reader, Xlsx};
 
 use crate::application::{DemandDownloader, DownloadError};
 use crate::domain::{DemandFigures, DemandHistory, SchoolDemandYear};
+
+use super::infohub::{fetch_workbook, workbook_client, ClientBuildError};
 
 /// One year's report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,21 +105,31 @@ fn text(cell: &Data) -> String {
     }
 }
 
+/// The largest count the store takes; a student count can never reach it.
+const MAX_COUNT: u32 = i32::MAX as u32;
+
 /// A count; `None` for a suppressed (`s`, `s^`), missing (`.`, `N/A`,
-/// empty) or non-numeric cell.
+/// empty), negative, non-numeric or absurdly large cell.
 fn count(cell: &Data) -> Option<u32> {
-    match cell {
-        Data::Float(f) if *f >= 0.0 => Some(f.round() as u32),
+    let value = match cell {
+        Data::Float(f) if *f >= 0.0 && *f <= f64::from(MAX_COUNT) => Some(f.round() as u32),
         Data::Int(i) => u32::try_from(*i).ok(),
         Data::String(s) => s.trim().replace(',', "").parse().ok(),
         _ => None,
-    }
+    };
+    value.filter(|v| *v <= MAX_COUNT)
 }
 
 /// The residential district code of a category such as
-/// `Residential District 01`, without leading zeros.
+/// `Residential District 01`, without leading zeros. The prefix is
+/// matched case-insensitively, as the column names are.
 fn residential_district(category: &str) -> Option<String> {
-    let rest = category.strip_prefix("Residential District")?.trim();
+    const PREFIX: &str = "residential district";
+    let head = category.get(..PREFIX.len())?;
+    if !head.eq_ignore_ascii_case(PREFIX) {
+        return None;
+    }
+    let rest = category[PREFIX.len()..].trim();
     let code = rest.trim_start_matches('0');
     if code.is_empty() {
         return Some("0".to_owned());
@@ -210,9 +221,9 @@ pub fn parse_demand_workbook<R: Read + Seek>(
     }
     let mut history = DemandHistory::new();
     for (dbn, school) in schools {
-        // A school whose only grade 6 rows are district breakdowns of
-        // nothing is not a grade 6 school.
-        if school.all.is_empty() && school.by_residential_district.is_empty() {
+        // Without an `All Students` figure the year says nothing about the
+        // school as a whole, so it is left out rather than shown blank.
+        if school.all.is_empty() {
             continue;
         }
         history.insert(&dbn, school);
@@ -225,17 +236,12 @@ pub struct InfoHubDemandClient {
     sources: Vec<DemandSource>,
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("cannot build the HTTP client: {0}")]
-pub struct ClientBuildError(#[from] reqwest::Error);
-
 impl InfoHubDemandClient {
     pub fn new(sources: Vec<DemandSource>) -> Result<Self, ClientBuildError> {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(600))
-            .user_agent("nycmsa")
-            .build()?;
-        Ok(Self { client, sources })
+        Ok(Self {
+            client: workbook_client()?,
+            sources,
+        })
     }
 }
 
@@ -253,38 +259,10 @@ impl DemandDownloader for InfoHubDemandClient {
                 url: String::new(),
                 reason: format!("no report is configured for {year}"),
             })?;
-        let url = source.url;
-        let bytes = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .and_then(reqwest::Response::error_for_status)
-            .map_err(|e| DownloadError::Request {
-                url: url.to_owned(),
-                reason: e.to_string(),
-            })?
-            .bytes()
-            .await
-            .map_err(|e| DownloadError::Request {
-                url: url.to_owned(),
-                reason: e.to_string(),
-            })?;
-        // Parsing a 10 MB workbook is CPU work; keep it off the executor
-        // (REAS-RUST-007).
-        tokio::task::spawn_blocking(move || {
-            parse_demand_workbook(std::io::Cursor::new(bytes), year).map_err(|e| {
-                DownloadError::Malformed {
-                    url: url.to_owned(),
-                    reason: e.to_string(),
-                }
-            })
+        fetch_workbook(&self.client, source.url, move |bytes| {
+            parse_demand_workbook(bytes, year).map_err(|e| e.to_string())
         })
         .await
-        .map_err(|e| DownloadError::Malformed {
-            url: url.to_owned(),
-            reason: format!("parse task failed: {e}"),
-        })?
     }
 }
 
@@ -311,7 +289,11 @@ mod tests {
         assert_eq!(
             history.schools(),
             2,
-            "the elementary school has no grade 6 figures"
+            "the elementary school has no grade 6 figures and the all-suppressed school is left out"
+        );
+        assert!(
+            history.years_of("20K000").is_empty(),
+            "district rows alone do not make a year"
         );
         let school = &history.years_of("15K442")[0];
         assert_eq!(
@@ -369,6 +351,17 @@ mod tests {
         assert_eq!(count(&Data::String("s^".to_owned())), None);
         assert_eq!(count(&Data::String(".".to_owned())), None);
         assert_eq!(count(&Data::String("N/A".to_owned())), None);
+        assert_eq!(count(&Data::Float(4e9)), None, "beyond any student count");
+        assert_eq!(count(&Data::Int(-3)), None);
+        assert_eq!(
+            residential_district("RESIDENTIAL DISTRICT 15"),
+            Some("15".to_owned())
+        );
+        assert_eq!(
+            residential_district("Residential district 7"),
+            Some("7".to_owned())
+        );
+        assert_eq!(residential_district("R\u{e9}sidential"), None);
         assert_eq!(
             residential_district("Residential District 01"),
             Some("1".to_owned())

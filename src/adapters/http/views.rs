@@ -801,34 +801,21 @@ impl ScanPage {
         facts: &ScanFacts,
         error: Option<String>,
     ) -> Self {
-        let ScanFacts {
-            districts,
-            catalog_size,
-            schools_with_scores,
-            scores_year,
-            demand_year,
-        } = facts;
-        let (catalog_size, schools_with_scores, scores_year, demand_year) = (
-            *catalog_size,
-            *schools_with_scores,
-            *scores_year,
-            *demand_year,
-        );
         let definitions = ProgramDefinitions::default();
         let selected: Vec<String> = query
             .attributes
             .iter()
             .flat_map(|a| a.split(',').map(|s| s.trim().to_owned()))
             .collect();
-        let district_chips = district_chips(districts, &selected);
-        let scores_line = match (schools_with_scores, scores_year) {
+        let district_chips = district_chips(&facts.districts, &selected);
+        let scores_line = match (facts.schools_with_scores, facts.scores_year) {
             (0, _) => "No state test results are loaded; run `nycmsa fetch-scores`.".to_owned(),
             (_, Some(year)) => format!(
                 "ELA and Math show the share of the school's students at proficiency (levels 3 and 4) on the {year} New York State tests, as published by the NYC DOE. Blank means the DOE suppressed the figure or did not report it."
             ),
             (_, None) => "State test results are loaded but none of these schools has a figure.".to_owned(),
         };
-        let demand_line = match demand_year {
+        let demand_line = match facts.demand_year {
             Some(year) => format!(
                 "\"Listed the school\" and \"Competed\" are the DOE's fall {year} figures for the whole school: families who named it anywhere on their application, and families who competed for a seat there. Click a school's name for its history."
             ),
@@ -868,7 +855,7 @@ impl ScanPage {
             district_chips,
             role_chips,
             lottery_line,
-            catalog_size,
+            catalog_size: facts.catalog_size,
             scores_line,
             demand_line,
             rows,
@@ -1004,6 +991,11 @@ fn school_url(dbn: &str) -> String {
     format!("/schools/{}", dbn.to_uppercase())
 }
 
+/// Right-aligned district code, so `9` sorts before `15` as text.
+fn district_sort_key(code: &str) -> String {
+    format!("{code:>3}")
+}
+
 fn ratio(value: Option<f64>, digits: usize) -> (String, String) {
     match value {
         Some(v) => (format!("{v:.digits$}"), format!("{v}")),
@@ -1092,32 +1084,27 @@ impl SchoolPage {
             })
             .collect();
         let latest = history.last();
-        let mut districts: Vec<DistrictDemandView> = latest
-            .map(|y| {
-                y.by_residential_district
-                    .iter()
-                    .map(|(code, f)| DistrictDemandView {
-                        district: format!("District {code}"),
-                        district_sort: format!("{:>3}", code),
-                        listed: opt(f.listed),
-                        considered: opt(f.considered),
-                        offers: opt(f.offers),
-                    })
-                    .collect()
-            })
+        // Most competing families first; listed families where the DOE
+        // suppressed the competing count; then by district.
+        let mut by_district: Vec<(&String, &crate::domain::DemandFigures)> = latest
+            .map(|y| y.by_residential_district.iter().collect())
             .unwrap_or_default();
-        districts.sort_by(|a, b| {
-            let key = |d: &DistrictDemandView| {
-                d.considered
-                    .parse::<u32>()
-                    .ok()
-                    .or_else(|| d.listed.parse::<u32>().ok())
-                    .unwrap_or(0)
-            };
+        by_district.sort_by(|(code_a, a), (code_b, b)| {
+            let key = |f: &crate::domain::DemandFigures| f.considered.or(f.listed).unwrap_or(0);
             key(b)
                 .cmp(&key(a))
-                .then_with(|| a.district_sort.cmp(&b.district_sort))
+                .then_with(|| district_sort_key(code_a).cmp(&district_sort_key(code_b)))
         });
+        let districts: Vec<DistrictDemandView> = by_district
+            .into_iter()
+            .map(|(code, f)| DistrictDemandView {
+                district: format!("District {code}"),
+                district_sort: district_sort_key(code),
+                listed: opt(f.listed),
+                considered: opt(f.considered),
+                offers: opt(f.offers),
+            })
+            .collect();
         Some(Self {
             dbn: dbn.clone(),
             name: first.school_name.clone(),

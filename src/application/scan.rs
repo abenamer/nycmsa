@@ -35,16 +35,6 @@ impl ScanCatalog {
         self.demand.latest_year()
     }
 
-    /// The admissions years in the demand history, ascending.
-    pub fn demand_years(&self) -> Vec<u32> {
-        self.demand.years()
-    }
-
-    /// Number of schools in the demand history.
-    pub fn schools_with_demand(&self) -> usize {
-        self.demand.schools()
-    }
-
     /// A school's latest demand figures, by DBN.
     pub fn demand_for(&self, dbn: &str) -> Option<LatestDemand> {
         self.demand.latest(dbn)

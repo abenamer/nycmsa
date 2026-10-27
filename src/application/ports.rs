@@ -70,7 +70,7 @@ impl CatalogSnapshot {
 pub enum DownloadError {
     #[error("request to {url} failed: {reason}")]
     Request { url: String, reason: String },
-    #[error("response from {url} was not the expected JSON: {reason}")]
+    #[error("response from {url} could not be read: {reason}")]
     Malformed { url: String, reason: String },
 }
 

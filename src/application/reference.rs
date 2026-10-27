@@ -21,6 +21,8 @@ pub enum ReferenceError {
     Repository(#[from] RepositoryError),
     #[error("no {0} in the database; run `nycmsa bootstrap` first")]
     Missing(&'static str),
+    #[error("none of the {count} demand reports could be read; first error: {first}")]
+    NoDemandReports { count: usize, first: String },
 }
 
 /// Downloads the catalog and stores it as a new snapshot.
@@ -200,16 +202,12 @@ impl<D: DemandDownloader, S: DemandStore, C: Clock> RefreshDemand<D, S, C> {
             }
         }
         if history.is_empty() {
-            let reason = failed_years
-                .first()
-                .map_or_else(|| "no years configured".to_owned(), |(_, r)| r.clone());
-            return Err(ReferenceError::Download(DownloadError::Request {
-                url: source.to_owned(),
-                reason: format!(
-                    "every year failed ({} years); first error: {reason}",
-                    failed_years.len()
-                ),
-            }));
+            return Err(ReferenceError::NoDemandReports {
+                count: failed_years.len(),
+                first: failed_years
+                    .first()
+                    .map_or_else(|| "no years configured".to_owned(), |(_, r)| r.clone()),
+            });
         }
         let source = if failed_years.is_empty() {
             source.to_owned()
@@ -618,7 +616,11 @@ mod tests {
         );
         let error = refresh.execute("InfoHub").await.expect_err("fails");
         assert!(
-            error.to_string().contains("every year failed (2 years)"),
+            matches!(error, ReferenceError::NoDemandReports { count: 2, .. }),
+            "{error}"
+        );
+        assert!(
+            error.to_string().contains("none of the 2 demand reports"),
             "{error}"
         );
         assert!(saves.0.lock().expect("not poisoned").is_empty());

@@ -102,9 +102,12 @@ impl DemandHistory {
         }
     }
 
-    /// A school's years, ascending; empty for an unknown DBN.
+    /// A school's years, ascending; empty for an unknown DBN. The DBN is
+    /// matched without regard to case, as `insert` stores it.
     pub fn years_of(&self, dbn: &str) -> &[SchoolDemandYear] {
-        self.by_dbn.get(dbn).map_or(&[], Vec::as_slice)
+        self.by_dbn
+            .get(&dbn.to_uppercase())
+            .map_or(&[], Vec::as_slice)
     }
 
     /// The latest year's figures for a school.
@@ -191,6 +194,11 @@ mod tests {
         assert_eq!(history.len(), 2);
         assert!(history.years_of("20K062").is_empty());
         assert_eq!(history.latest("20K062"), None);
+        assert_eq!(
+            history.latest("15k442").map(|l| l.year),
+            Some(2025),
+            "a lower-case lookup finds the school"
+        );
     }
 
     #[test]

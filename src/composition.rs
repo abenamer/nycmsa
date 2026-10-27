@@ -28,7 +28,7 @@ use crate::adapters::{
     PostgresReferenceData, SystemClock,
 };
 use crate::application::{
-    DistrictFilter, DownloadError, ImportSeeds, LoadReferenceData, ReclassifyProfiles,
+    DemandStore, DistrictFilter, DownloadError, ImportSeeds, LoadReferenceData, ReclassifyProfiles,
     ReferenceError, RefreshCatalog, RefreshDemand, RefreshProfiles, RefreshTestResults,
     ScanCatalog, SimulateStudent,
 };
@@ -59,8 +59,6 @@ pub enum AppError {
     OpenDataClient(#[from] open_data::ClientBuildError),
     #[error(transparent)]
     InfoHubClient(#[from] infohub::ClientBuildError),
-    #[error(transparent)]
-    InfoHubDemandClient(#[from] infohub_demand::ClientBuildError),
     #[error(transparent)]
     Postgres(#[from] PostgresSetupError),
     #[error("cannot write CSV: {0}")]
@@ -317,9 +315,10 @@ pub async fn run_bootstrap(args: &BootstrapArgs) -> Result<String, AppError> {
     if !inventory.profiles {
         report.push_str(&fetch_profiles(reference.clone()).await?);
     }
-    if !inventory.demand {
+    if demand_incomplete(&reference).await? {
         // Supplementary data: a failed download must not keep the site
-        // from starting. The next bootstrap tries again.
+        // from starting. The next bootstrap tries again, and a snapshot
+        // that lacks a year is refreshed whole on the next bootstrap too.
         match fetch_demand(reference).await {
             Ok(text) => report.push_str(&text),
             Err(error) => {
@@ -332,6 +331,22 @@ pub async fn run_bootstrap(args: &BootstrapArgs) -> Result<String, AppError> {
         report.push_str("the database already holds every reference set\n");
     }
     Ok(report)
+}
+
+/// True when no demand snapshot exists or the latest one lacks a year
+/// the sources list, so a report that failed once is tried again.
+async fn demand_incomplete(reference: &PostgresReferenceData) -> Result<bool, AppError> {
+    let Some(stored) = reference
+        .latest_demand()
+        .await
+        .map_err(ReferenceError::from)?
+    else {
+        return Ok(true);
+    };
+    let have = stored.value.years();
+    Ok(infohub_demand::SOURCES
+        .iter()
+        .any(|s| !have.contains(&s.year)))
 }
 
 /// The simulation's programs: every catalog program with figures, with the
