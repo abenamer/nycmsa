@@ -4,9 +4,9 @@
 #   docker compose up --build
 #   open http://127.0.0.1:8080   (or NYCMSA_PORT=8090 docker compose up --build)
 #
-# Everything the app reads lives in PostgreSQL: simulation runs, the
-# MySchools catalog, state test results, the hand-entered programs, and
-# the form defaults. The data files live in the named volume
+# Everything the app reads lives in PostgreSQL: the MySchools catalog,
+# state test results, the hand-entered programs, and the program
+# profiles. Nothing a visitor types is stored. The data lives in the named volume
 # `nycmsa_pgdata`, so `docker compose down` and image rebuilds keep them.
 # Never run `docker compose down -v` against data you want to keep: `-v`
 # deletes the named volume. See docs/operations.md for backup and restore.

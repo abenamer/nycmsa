@@ -134,12 +134,31 @@ explicitly. The picker table now shares the scan page's sort script
 | Code review on pull request 2 | Five findings, all applied: the arrow styling is scoped to the move buttons so × keeps its own look; the sort script uses the column's `cellIndex`, computes each row's key once, and takes Enter or Space on a focused heading with `aria-sort`; one `ScoreCell { shown, raw }` type serves both the scan and picker rows. |
 | Browser check after the review fixes | Passed: × is muted grey at 1.1rem and turns red on hover; the arrows are ink at 0.8rem; focusing "Seats" and pressing Enter twice sorts 662 rows descending with `aria-sort="descending"`, `tabindex="0"` and `role="button"`; Space on "ELA" sorts ascending with blanks last and clears the "Seats" marker; the scan page's "Seats" heading still sorts 642 rows. |
 
+## Local evidence: 2026-10-28 (no user input on the server)
+
+Same environment. Simulation runs are no longer stored; results live in
+the browser (ADR 0005). The `runs` table, its stores, port, and
+endpoints are removed; the questions and scan pages open blank; every
+page carries the privacy note and a "forget everything" button.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt`, `clippy -D warnings`, `cargo test --locked` | Passed: 99 unit tests, 14 HTTP tests; 1 ignored |
+| `cargo test --locked --test postgres_reference -- --ignored` | Passed against the local server through the shared `adapters::postgres` pool |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+| Migration 4 on the local database | Applied by `serve`; `to_regclass('runs')` is null afterwards, four migrations recorded |
+| Browser check with Playwright (Chromium) against `nycmsa serve` | Passed: `/` opens with an empty lottery field, empty ranking, no district or family chip checked; submitting the form renders the result at `/simulate` with status 200 and no `Set-Cookie`; the browser's `nycmsa.results` then holds one entry (programs, lottery prefix, chance, answers) and still one after a reload; the context has zero cookies; `/` lists that result and "Show again" recomputes it without adding a duplicate; "Forget everything this browser remembers" leaves no `nycmsa.` key and an empty form; `/scan` opens with an empty lottery field and no rows; `/profiles` without a district says to pick one. |
+| HTTP tests | `/api/simulate` returns the report with no `id`; `/api/runs`, `/api/runs/1` and `/runs/1` return 404; the result page carries `data-answers` with the submitted fields. |
+| Code review on pull request 4 | Eight findings, all applied: the scan page never substitutes a lottery prefix (the API keeps its documented default); one scan-page flow instead of three; `serve` no longer requires the seed student; "Show again" keeps the form's memory in step with the result shown; a result is forgotten by its timestamp, not a stale index; a stale doc comment and ADR 0001's port example fixed; the API reference states that no per-client rate limit exists. |
+| Security review on pull request 4 | No findings. Checked: attribute escaping of `data-answers` (askama entity-escapes quotes and angle brackets, and every submitted field except free-form attributes is validated to alphanumerics or hex), the inline scripts use `textContent` and DOM APIs only, "Show again" can only post same-origin form fields that the server validates, no handler logs form fields, no cookie, no endpoint returns another visitor's data. |
+
 ## Remote evidence
 
 | Revision | Run | Outcome |
 | --- | --- | --- |
 | adf9f22 (pull request 1, 2026-10-27) | GitHub Actions run 40453826962 (pull request) and 40453821113 (push) | Passed: `docs`, `rust` (fmt, check, clippy, tests, both PostgreSQL integration tests against the `postgres:17` service, `cargo audit`), `docker` (image build and `sim --trials 1000`) |
 | 93a411c (pull request 2, 2026-10-27) | GitHub Actions run 40456654387 (pull request) and 40456650876 (push) | Passed: the same three jobs |
+| 077fcc3 (pull request 4, 2026-10-27) | GitHub Actions run 40468033725 (pull request) and 40468028557 (push) | Passed: the same three jobs, with the PostgreSQL step running only the reference-store test |
 
 The two earlier pushes on the same pull request failed in `rust`; the
 local-evidence table above records why and the fix for each. A commit

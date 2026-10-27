@@ -3,7 +3,6 @@
 //! calls one function per subcommand.
 
 use std::collections::BTreeSet;
-use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,22 +15,21 @@ use crate::adapters::cli::{
     FetchScoresArgs, ImportArgs, ScanArgs, ScoreSource, ServeArgs, SimArgs,
 };
 use crate::adapters::csv_export::scan_rows_csv;
-use crate::adapters::dto::{student_from_dto, student_to_dto, InvalidInput, StudentDto};
+use crate::adapters::dto::{student_from_dto, InvalidInput};
 use crate::adapters::http::{router, AppState, HttpLimits, ProfileBook};
 use crate::adapters::json_files::{load_program_definitions, load_student, FileLoadError};
 use crate::adapters::myschools::{catalog_from_documents, load_catalog, CatalogLoadError};
 use crate::adapters::myschools_api::{ClientBuildError, DEFAULT_BASE_URL};
-use crate::adapters::postgres_runs::PostgresSetupError;
+use crate::adapters::postgres::{self, PostgresSetupError};
 use crate::adapters::{infohub, open_data};
 
 use crate::adapters::{
-    InMemoryRunRepository, InfoHubClient, MySchoolsApiClient, NycOpenDataClient,
-    PostgresReferenceData, PostgresRunRepository, SystemClock,
+    InfoHubClient, MySchoolsApiClient, NycOpenDataClient, PostgresReferenceData, SystemClock,
 };
 use crate::application::{
-    Clock, DistrictFilter, DownloadError, ImportSeeds, LoadReferenceData, ReclassifyProfiles,
-    ReferenceError, RefreshCatalog, RefreshProfiles, RefreshTestResults, RunQueries, RunRepository,
-    ScanCatalog, SimulateStudent,
+    DistrictFilter, DownloadError, ImportSeeds, LoadReferenceData, ReclassifyProfiles,
+    ReferenceError, RefreshCatalog, RefreshProfiles, RefreshTestResults, ScanCatalog,
+    SimulateStudent,
 };
 use crate::domain::catalog::InvalidDistrictCode;
 use crate::domain::{
@@ -89,17 +87,12 @@ pub enum AppError {
 /// `nycmsa sim`: load the files, apply overrides, run, render.
 ///
 /// The CLI runs on its own thread with nothing else scheduled, so the CPU
-/// work runs inline. No run is stored.
+/// work runs inline.
 pub fn run_sim(args: &SimArgs) -> Result<String, AppError> {
     let programs = load_program_definitions(&args.programs)?;
     let student = load_student(&args.student)?;
     let request = simulation_request(args, student)?;
-    let use_case = SimulateStudent::new(
-        programs,
-        InMemoryRunRepository::new(NonZeroUsize::MIN),
-        SystemClock,
-    );
-    let report = use_case.compute(&request)?;
+    let report = SimulateStudent::new(programs).execute(&request)?;
     if args.json {
         let dto = crate::adapters::dto::report_to_dto(&report);
         return Ok(format!("{}\n", serde_json::to_string_pretty(&dto)?));
@@ -137,15 +130,12 @@ fn district_filter(raw: &str) -> Result<DistrictFilter, AppError> {
     Ok(DistrictFilter::Only(codes))
 }
 
-/// Opens the database, applies migrations, and returns the two adapters
-/// that share its pool.
-async fn connect(
-    database: &DatabaseArgs,
-) -> Result<(PostgresRunRepository, PostgresReferenceData), AppError> {
-    let runs = PostgresRunRepository::connect(&database.database_url, 5).await?;
-    runs.migrate().await?;
-    let reference = PostgresReferenceData::new(runs.pool().clone());
-    Ok((runs, reference))
+/// Opens the database, applies migrations, and returns the reference
+/// store. The database holds reference data only; see ADR 0005.
+async fn connect(database: &DatabaseArgs) -> Result<PostgresReferenceData, AppError> {
+    let pool = postgres::connect(&database.database_url, 5).await?;
+    postgres::migrate(&pool).await?;
+    Ok(PostgresReferenceData::new(pool))
 }
 
 async fn fetch_catalog(
@@ -219,7 +209,7 @@ async fn fetch_profiles(reference: PostgresReferenceData) -> Result<String, AppE
 /// `nycmsa reclassify-profiles`: apply the current rules to the stored
 /// texts.
 pub async fn run_reclassify_profiles(args: &FetchProfilesArgs) -> Result<String, AppError> {
-    let (_, reference) = connect(&args.database).await?;
+    let reference = connect(&args.database).await?;
     let count = ReclassifyProfiles::new(reference, SystemClock)
         .execute()
         .await?;
@@ -228,7 +218,7 @@ pub async fn run_reclassify_profiles(args: &FetchProfilesArgs) -> Result<String,
 
 /// `nycmsa fetch-profiles`: look up and classify every program.
 pub async fn run_fetch_profiles(args: &FetchProfilesArgs) -> Result<String, AppError> {
-    let (_, reference) = connect(&args.database).await?;
+    let reference = connect(&args.database).await?;
     fetch_profiles(reference).await
 }
 
@@ -255,26 +245,26 @@ async fn import_seeds(
 
 /// `nycmsa fetch`: download the catalog into the database.
 pub async fn run_fetch(args: &FetchArgs) -> Result<String, AppError> {
-    let (_, reference) = connect(&args.database).await?;
+    let reference = connect(&args.database).await?;
     fetch_catalog(reference, &args.districts).await
 }
 
 /// `nycmsa fetch-scores`: download the test results into the database.
 pub async fn run_fetch_scores(args: &FetchScoresArgs) -> Result<String, AppError> {
-    let (_, reference) = connect(&args.database).await?;
+    let reference = connect(&args.database).await?;
     fetch_scores(reference, args.source).await
 }
 
 /// `nycmsa import`: store the seed files.
 pub async fn run_import(args: &ImportArgs) -> Result<String, AppError> {
-    let (_, reference) = connect(&args.database).await?;
+    let reference = connect(&args.database).await?;
     import_seeds(reference, &args.programs, &args.student).await
 }
 
 /// `nycmsa bootstrap`: import the seeds and download whatever is missing,
 /// so a fresh database can serve.
 pub async fn run_bootstrap(args: &BootstrapArgs) -> Result<String, AppError> {
-    let (_, reference) = connect(&args.database).await?;
+    let reference = connect(&args.database).await?;
     let inventory = LoadReferenceData::new(reference.clone())
         .inventory()
         .await?;
@@ -310,7 +300,7 @@ pub fn simulation_programs(
 
 /// `nycmsa serve`: read the latest reference snapshots and serve.
 pub async fn run_serve(args: &ServeArgs) -> Result<(), AppError> {
-    let (runs, reference) = connect(&args.database).await?;
+    let reference = connect(&args.database).await?;
     let data = LoadReferenceData::new(reference).execute().await?;
     tracing::info!(%data, "loaded reference data");
     let catalog = catalog_from_documents(&data.catalog.value.schools)?;
@@ -322,9 +312,7 @@ pub async fn run_serve(args: &ServeArgs) -> Result<(), AppError> {
     );
     serve_with(
         args,
-        runs,
         programs,
-        student_to_dto(&data.student.value),
         catalog,
         data.results.value,
         data.profiles.value,
@@ -332,31 +320,15 @@ pub async fn run_serve(args: &ServeArgs) -> Result<(), AppError> {
     .await
 }
 
-/// Generic over the run store so both stores use static dispatch; the
-/// concrete type is visible in `run_serve` (REAS-ARCH-006).
-async fn serve_with<R>(
+async fn serve_with(
     args: &ServeArgs,
-    repository: R,
     programs: ProgramDefinitions,
-    student: StudentDto,
     catalog: Vec<CatalogProgram>,
     results: TestResults,
     profiles: Vec<ProgramProfile>,
-) -> Result<(), AppError>
-where
-    R: RunRepository + Clone + Send + Sync + 'static,
-{
+) -> Result<(), AppError> {
     let limits = HttpLimits::default();
-    let state = build_state(
-        repository,
-        SystemClock,
-        programs,
-        student,
-        catalog,
-        results,
-        profiles,
-        &limits,
-    );
+    let state = build_state(programs, catalog, results, profiles, &limits);
     let app = router(state, &limits);
     let listener = tokio::net::TcpListener::bind(&args.bind)
         .await
@@ -372,29 +344,18 @@ where
 }
 
 /// Builds the handler state. Shared with the HTTP tests.
-#[allow(clippy::too_many_arguments)]
-pub fn build_state<R, C>(
-    repository: R,
-    clock: C,
+pub fn build_state(
     programs: ProgramDefinitions,
-    student: StudentDto,
     catalog: Vec<CatalogProgram>,
     results: TestResults,
     profiles: Vec<ProgramProfile>,
     limits: &HttpLimits,
-) -> AppState<R, C>
-where
-    R: RunRepository + Clone,
-    C: Clock,
-{
+) -> AppState {
     AppState {
-        simulate: Arc::new(SimulateStudent::new(programs, repository.clone(), clock)),
-        runs: Arc::new(RunQueries::new(repository)),
+        simulate: Arc::new(SimulateStudent::new(programs)),
         profiles: Arc::new(ProfileBook::new(profiles, &catalog)),
         scan: Arc::new(ScanCatalog::new(catalog, results)),
-        default_student: Arc::new(student),
         cpu_permits: Arc::new(Semaphore::new(limits.cpu_permits.max(1))),
-        recent_runs: limits.recent_runs,
     }
 }
 
@@ -411,7 +372,6 @@ async fn shutdown_signal() {
 /// The data files loaded for the web server.
 pub struct BundledData {
     pub programs: ProgramDefinitions,
-    pub student: StudentDto,
     pub catalog: Vec<CatalogProgram>,
     pub results: TestResults,
     pub profiles: Vec<ProgramProfile>,
@@ -425,7 +385,6 @@ pub fn load_bundled(seed_dir: &Path, catalog_file: &Path) -> Result<BundledData,
     let catalog = load_catalog(catalog_file)?;
     Ok(BundledData {
         programs: simulation_programs(&catalog, curated)?,
-        student: load_student(&seed_dir.join("student.json"))?,
         catalog,
         results: TestResults::new(),
         profiles: Vec::new(),

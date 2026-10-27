@@ -2,9 +2,10 @@
 //! and a JSON API. Handlers parse input, call a use case, and render; the
 //! domain rules live elsewhere.
 //!
-//! Every endpoint is anonymous: the server is a local analysis tool and
-//! binds to loopback by default. See `docs/api.md` for the endpoint table and
-//! the limits applied here (body size, request timeout, bounded CPU work).
+//! Every endpoint is anonymous and stateless: the server computes a result
+//! and forgets the request; it sets no cookies and stores nothing a visitor
+//! types (ADR 0005). See `docs/api.md` for the endpoint table and the limits
+//! applied here (body size, request timeout, bounded CPU work).
 
 pub mod choices;
 pub mod views;
@@ -14,30 +15,27 @@ use std::time::Duration;
 
 use askama::Template;
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Path, RawQuery, State};
+use axum::extract::{DefaultBodyLimit, RawQuery, State};
 use axum::http::{header, StatusCode};
-use axum::response::{Html, IntoResponse, Redirect, Response};
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use tokio::sync::Semaphore;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
-use crate::application::{
-    Clock, RepositoryError, Run, RunId, RunQueries, RunRepository, ScanCatalog, SimulateStudent,
-    SimulationRequest,
-};
-use crate::domain::{LotteryPrefix, ScanRequest, SimulationError};
+use crate::application::{ScanCatalog, SimulateStudent, SimulationRequest};
+use crate::domain::{LotteryPrefix, Report, ScanRequest, SimulationError};
 
 use super::csv_export::scan_rows_csv;
 use super::dto::{
     parameters_from_dto, parse_attributes, program_definitions_from_dto,
-    program_definitions_to_dto, run_to_dto, scan_row_to_dto, student_from_dto, InvalidInput,
+    program_definitions_to_dto, report_to_dto, scan_row_to_dto, student_from_dto, InvalidInput,
     ParametersDto, ScanResponseDto, SimulateRequestDto, StudentDto, DEFAULT_DEMAND_SD,
     DEFAULT_TRIALS,
 };
 use choices::{OutlookChoice, TalentTestChoice, WaitlistChoice};
-use views::{HomePage, PickerPage, ProfilesPage, ProgramsPage, RunPage, ScanPage};
+use views::{HomePage, PickerPage, ProfilesPage, ProgramsPage, ResultPage, ScanPage};
 
 /// Request limits (REAS-SEC-001).
 #[derive(Debug, Clone, Copy)]
@@ -46,8 +44,6 @@ pub struct HttpLimits {
     pub request_timeout: Duration,
     /// Simulations that may run at the same time on the blocking pool.
     pub cpu_permits: usize,
-    /// Runs listed on the home page.
-    pub recent_runs: usize,
 }
 
 impl Default for HttpLimits {
@@ -56,7 +52,6 @@ impl Default for HttpLimits {
             body_limit_bytes: 1024 * 1024,
             request_timeout: Duration::from_secs(60),
             cpu_permits: std::thread::available_parallelism().map_or(1, |n| n.get()),
-            recent_runs: 20,
         }
     }
 }
@@ -116,53 +111,29 @@ impl ProfileBook {
     }
 }
 
-/// Shared handler state. `R` and `C` are the adapter types the composition
-/// root selected.
-pub struct AppState<R, C> {
-    pub simulate: Arc<SimulateStudent<R, C>>,
-    pub runs: Arc<RunQueries<R>>,
+/// Shared handler state: reference data loaded at startup, read-only
+/// while the server runs. There is no session and no per-visitor state.
+#[derive(Clone)]
+pub struct AppState {
+    pub simulate: Arc<SimulateStudent>,
     pub scan: Arc<ScanCatalog>,
     pub profiles: Arc<ProfileBook>,
-    pub default_student: Arc<StudentDto>,
     pub cpu_permits: Arc<Semaphore>,
-    pub recent_runs: usize,
 }
 
-impl<R, C> Clone for AppState<R, C> {
-    fn clone(&self) -> Self {
-        Self {
-            simulate: Arc::clone(&self.simulate),
-            runs: Arc::clone(&self.runs),
-            scan: Arc::clone(&self.scan),
-            profiles: Arc::clone(&self.profiles),
-            default_student: Arc::clone(&self.default_student),
-            cpu_permits: Arc::clone(&self.cpu_permits),
-            recent_runs: self.recent_runs,
-        }
-    }
-}
-
-/// Builds the router. The type bounds are what `spawn_blocking` and the
-/// multi-threaded runtime require.
-pub fn router<R, C>(state: AppState<R, C>, limits: &HttpLimits) -> Router
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
+/// Builds the router.
+pub fn router(state: AppState, limits: &HttpLimits) -> Router {
     Router::new()
-        .route("/", get(home::<R, C>))
-        .route("/simulate", post(simulate_form::<R, C>))
-        .route("/pick", get(pick_page::<R, C>))
-        .route("/profiles", get(profiles_page::<R, C>))
-        .route("/runs/{id}", get(run_page::<R, C>))
-        .route("/scan", get(scan_page::<R, C>))
-        .route("/programs", get(programs_page::<R, C>))
-        .route("/api/simulate", post(simulate_json::<R, C>))
-        .route("/api/runs", get(runs_json::<R, C>))
-        .route("/api/runs/{id}", get(run_json::<R, C>))
-        .route("/api/scan", get(scan_json::<R, C>))
-        .route("/api/scan.csv", get(scan_csv::<R, C>))
-        .route("/api/programs", get(programs_json::<R, C>))
+        .route("/", get(home))
+        .route("/simulate", post(simulate_form))
+        .route("/pick", get(pick_page))
+        .route("/profiles", get(profiles_page))
+        .route("/scan", get(scan_page))
+        .route("/programs", get(programs_page))
+        .route("/api/simulate", post(simulate_json))
+        .route("/api/scan", get(scan_json))
+        .route("/api/scan.csv", get(scan_csv))
+        .route("/api/programs", get(programs_json))
         .route("/healthz", get(healthz))
         .layer(DefaultBodyLimit::max(limits.body_limit_bytes))
         .layer(TimeoutLayer::with_status_code(
@@ -183,10 +154,6 @@ pub enum HttpError {
     Simulation(#[from] SimulationError),
     #[error("{0}")]
     Form(String),
-    #[error("not found")]
-    NotFound,
-    #[error("{0}")]
-    Repository(#[from] RepositoryError),
     #[error("cannot render page: {0}")]
     Render(#[from] askama::Error),
     #[error("cannot render CSV: {0}")]
@@ -201,8 +168,6 @@ impl HttpError {
             HttpError::Invalid(_) | HttpError::Simulation(_) | HttpError::Form(_) => {
                 StatusCode::UNPROCESSABLE_ENTITY
             }
-            HttpError::NotFound => StatusCode::NOT_FOUND,
-            HttpError::Repository(_) => StatusCode::SERVICE_UNAVAILABLE,
             HttpError::Render(_) | HttpError::Csv(_) | HttpError::Internal(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -225,28 +190,20 @@ fn page<T: Template>(template: &T) -> Result<Html<String>, HttpError> {
     Ok(Html(template.render()?))
 }
 
-/// Runs the CPU step on the blocking pool under a concurrency permit, then
-/// the I/O step on the executor (REAS-RUST-007). A started simulation cannot
-/// be cancelled; the trial cap bounds its duration.
-async fn simulate_and_record<R, C>(
-    state: &AppState<R, C>,
-    request: SimulationRequest,
-) -> Result<Run, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
+/// Runs the simulation on the blocking pool under a concurrency permit
+/// (REAS-RUST-007). A started simulation cannot be cancelled; the trial
+/// cap bounds its duration. Nothing is stored.
+async fn run_simulation(state: &AppState, request: SimulationRequest) -> Result<Report, HttpError> {
     let _permit = state
         .cpu_permits
         .acquire()
         .await
         .map_err(|_| HttpError::Internal("simulation pool is closed".to_owned()))?;
     let simulate = Arc::clone(&state.simulate);
-    let student = request.student.clone();
-    let report = tokio::task::spawn_blocking(move || simulate.compute(&request))
+    let report = tokio::task::spawn_blocking(move || simulate.execute(&request))
         .await
         .map_err(|e| HttpError::Internal(format!("simulation task failed: {e}")))??;
-    Ok(state.simulate.record(student, report).await?)
+    Ok(report)
 }
 
 async fn healthz() -> &'static str {
@@ -276,46 +233,35 @@ fn district_filter(raw: Option<&str>) -> Vec<String> {
     .unwrap_or_default()
 }
 
-async fn home<R, C>(
-    State(state): State<AppState<R, C>>,
+/// The questions page opens blank: no answer is prefilled by the server.
+/// The browser may refill it from its own storage.
+async fn home(
+    State(state): State<AppState>,
     RawQuery(raw): RawQuery,
-) -> Result<Html<String>, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
-    let recent = state.runs.recent(state.recent_runs).await?;
-    let mut form = views::FormValues::from_student(&state.default_student, &state.scan.districts());
+) -> Result<Html<String>, HttpError> {
+    let mut form = views::FormValues::blank(&state.scan.districts());
     if let Some(ranking) = ranking_param(raw.as_deref()) {
         form.ranking = split_list(&ranking).collect::<Vec<_>>().join(", ");
     }
-    let template = HomePage::new(form, &recent, None);
-    page(&template)
+    page(&HomePage::new(form, None))
 }
 
-async fn pick_page<R, C>(State(state): State<AppState<R, C>>) -> Result<Html<String>, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
+async fn pick_page(State(state): State<AppState>) -> Result<Html<String>, HttpError> {
     page(&PickerPage::new(&state))
 }
 
-async fn profiles_page<R, C>(
-    State(state): State<AppState<R, C>>,
+async fn profiles_page(
+    State(state): State<AppState>,
     RawQuery(raw): RawQuery,
-) -> Result<Html<String>, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
+) -> Result<Html<String>, HttpError> {
     page(&ProfilesPage::new(&state, &district_filter(raw.as_deref())))
 }
 
 /// The simulate form. Chips arrive as repeated `attribute` keys and one
 /// `talent_test`, `waitlist`, and `outlook` key each. Trials, seed, and
-/// demand noise are fixed; see `docs/api.md`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// demand noise are fixed; see `docs/api.md`. The result page hands the
+/// same fields back to the browser, serialized, so it can remember them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct SimulateForm {
     pub ranking: String,
     pub lottery_number: String,
@@ -429,103 +375,42 @@ impl SimulateForm {
     }
 }
 
-async fn simulate_form<R, C>(
-    State(state): State<AppState<R, C>>,
-    body: Bytes,
-) -> Result<Response, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
+/// Computes and renders the result in the same response. There is no
+/// result URL: the page carries the answers so the browser can keep them.
+async fn simulate_form(State(state): State<AppState>, body: Bytes) -> Result<Response, HttpError> {
     let form = SimulateForm::from_body(&body);
     let request = match form.to_request() {
         Ok(request) => request,
         Err(error @ (HttpError::Invalid(_) | HttpError::Form(_))) => {
-            return invalid_form(&state, &form, error.to_string()).await;
+            return invalid_form(&state, &form, error.to_string());
         }
         Err(other) => return Err(other),
     };
-    match simulate_and_record(&state, request).await {
-        Ok(run) => Ok(Redirect::to(&format!("/runs/{}", run.id)).into_response()),
-        Err(HttpError::Simulation(error)) => invalid_form(&state, &form, error.to_string()).await,
+    let student = request.student.clone();
+    match run_simulation(&state, request).await {
+        Ok(report) => Ok(page(&ResultPage::new(&form, &student, &report))?.into_response()),
+        Err(HttpError::Simulation(error)) => invalid_form(&state, &form, error.to_string()),
         Err(other) => Err(other),
     }
 }
 
 /// Re-renders the form with the submitted values and the error, status 422.
-async fn invalid_form<R, C>(
-    state: &AppState<R, C>,
+fn invalid_form(
+    state: &AppState,
     form: &SimulateForm,
     message: String,
-) -> Result<Response, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
-    let recent = state.runs.recent(state.recent_runs).await?;
+) -> Result<Response, HttpError> {
     let template = HomePage::new(
         views::FormValues::from_form(form, &state.scan.districts()),
-        &recent,
         Some(message),
     );
     Ok((StatusCode::UNPROCESSABLE_ENTITY, page(&template)?).into_response())
 }
 
-fn parse_run_id(raw: &str) -> Result<RunId, HttpError> {
-    RunId::parse(raw).map_err(|_| HttpError::NotFound)
-}
-
-async fn find_run<R, C>(state: &AppState<R, C>, raw_id: &str) -> Result<Run, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
-    let id = parse_run_id(raw_id)?;
-    state.runs.find(id).await?.ok_or(HttpError::NotFound)
-}
-
-async fn run_page<R, C>(
-    State(state): State<AppState<R, C>>,
-    Path(id): Path<String>,
-) -> Result<Html<String>, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
-    let run = find_run(&state, &id).await?;
-    page(&RunPage::new(&run))
-}
-
-async fn run_json<R, C>(
-    State(state): State<AppState<R, C>>,
-    Path(id): Path<String>,
-) -> Result<Response, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
-    let run = find_run(&state, &id).await?;
-    Ok(Json(run_to_dto(&run)).into_response())
-}
-
-async fn runs_json<R, C>(State(state): State<AppState<R, C>>) -> Result<Response, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
-    let runs = state.runs.recent(state.recent_runs).await?;
-    let body: Vec<_> = runs.iter().map(run_to_dto).collect();
-    Ok(Json(body).into_response())
-}
-
-async fn simulate_json<R, C>(
-    State(state): State<AppState<R, C>>,
+async fn simulate_json(
+    State(state): State<AppState>,
     Json(body): Json<SimulateRequestDto>,
-) -> Result<Response, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
+) -> Result<Response, HttpError> {
     let request = SimulationRequest {
         student: student_from_dto(body.student)?,
         parameters: parameters_from_dto(body.parameters)?,
@@ -534,8 +419,8 @@ where
             .map(program_definitions_from_dto)
             .transpose()?,
     };
-    let run = simulate_and_record(&state, request).await?;
-    Ok((StatusCode::CREATED, Json(run_to_dto(&run))).into_response())
+    let report = run_simulation(&state, request).await?;
+    Ok(Json(report_to_dto(&report)).into_response())
 }
 
 /// Query string of the scan endpoints. Districts and roles arrive as
@@ -560,15 +445,36 @@ impl Default for ScanQuery {
 }
 
 impl ScanQuery {
-    pub fn from_raw(raw: Option<&str>) -> Self {
-        let Some(raw) = raw.filter(|r| !r.trim().is_empty()) else {
-            return Self::default();
-        };
-        let mut query = Self {
+    /// Nothing chosen and no lottery prefix: what the page shows first.
+    pub fn blank() -> Self {
+        Self {
             attributes: vec![],
             frl: false,
             lottery: String::new(),
-        };
+        }
+    }
+
+    /// The JSON and CSV endpoints: the Python scanner's defaults fill in
+    /// whatever the query leaves out, including the lottery prefix.
+    pub fn from_raw(raw: Option<&str>) -> Self {
+        match raw.filter(|r| !r.trim().is_empty()) {
+            None => Self::default(),
+            Some(raw) => Self::parse(raw, Some("BD")),
+        }
+    }
+
+    /// The HTML page: nothing is filled in for the visitor. Without a
+    /// query string the questions are blank; with one, a missing lottery
+    /// prefix stays missing and the page shows no result.
+    pub fn for_page(raw: Option<&str>) -> Self {
+        match raw.filter(|r| !r.trim().is_empty()) {
+            None => Self::blank(),
+            Some(raw) => Self::parse(raw, None),
+        }
+    }
+
+    fn parse(raw: &str, lottery_fallback: Option<&str>) -> Self {
+        let mut query = Self::blank();
         let mut lottery_given = false;
         for (key, value) in pairs(raw.as_bytes()) {
             match key.as_str() {
@@ -585,7 +491,9 @@ impl ScanQuery {
             }
         }
         if !lottery_given {
-            query.lottery = "BD".to_owned();
+            if let Some(fallback) = lottery_fallback {
+                query.lottery = fallback.to_owned();
+            }
         }
         query
     }
@@ -599,54 +507,48 @@ impl ScanQuery {
     }
 }
 
-async fn scan_page<R, C>(
-    State(state): State<AppState<R, C>>,
+/// The server prefills no lottery prefix: without one the page shows the
+/// questions and no result. A bad prefix shows the message, status 422.
+async fn scan_page(
+    State(state): State<AppState>,
     RawQuery(raw): RawQuery,
-) -> Result<Response, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
-    let query = ScanQuery::from_raw(raw.as_deref());
-    let districts = state.scan.districts();
-    match query.to_request() {
-        Ok(request) => {
-            let rows = state.scan.execute(&request);
-            let template = ScanPage::new(
-                &query,
-                Some((&request, &rows)),
-                &districts,
-                state.scan.program_count(),
-                state.scan.schools_with_scores(),
-                state.scan.scores_year(),
-                None,
-            );
-            Ok(page(&template)?.into_response())
+) -> Result<Response, HttpError> {
+    let query = ScanQuery::for_page(raw.as_deref());
+    let (computed, error) = if query.lottery.trim().is_empty() {
+        (None, None)
+    } else {
+        match query.to_request() {
+            Ok(request) => {
+                let rows = state.scan.execute(&request);
+                (Some((request, rows)), None)
+            }
+            Err(error @ (HttpError::Invalid(_) | HttpError::Form(_))) => {
+                (None, Some(error.to_string()))
+            }
+            Err(other) => return Err(other),
         }
-        Err(error @ (HttpError::Invalid(_) | HttpError::Form(_))) => {
-            let template = ScanPage::new(
-                &query,
-                None,
-                &districts,
-                state.scan.program_count(),
-                state.scan.schools_with_scores(),
-                state.scan.scores_year(),
-                Some(error.to_string()),
-            );
-            Ok((StatusCode::UNPROCESSABLE_ENTITY, page(&template)?).into_response())
-        }
-        Err(other) => Err(other),
-    }
+    };
+    let status = if error.is_some() {
+        StatusCode::UNPROCESSABLE_ENTITY
+    } else {
+        StatusCode::OK
+    };
+    let template = ScanPage::new(
+        &query,
+        computed.as_ref().map(|(r, rows)| (r, rows.as_slice())),
+        &state.scan.districts(),
+        state.scan.program_count(),
+        state.scan.schools_with_scores(),
+        state.scan.scores_year(),
+        error,
+    );
+    Ok((status, page(&template)?).into_response())
 }
 
-async fn scan_json<R, C>(
-    State(state): State<AppState<R, C>>,
+async fn scan_json(
+    State(state): State<AppState>,
     RawQuery(raw): RawQuery,
-) -> Result<Response, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
+) -> Result<Response, HttpError> {
     let request = ScanQuery::from_raw(raw.as_deref()).to_request()?;
     let rows = state.scan.execute(&request);
     let body = ScanResponseDto {
@@ -663,14 +565,10 @@ where
     Ok(Json(body).into_response())
 }
 
-async fn scan_csv<R, C>(
-    State(state): State<AppState<R, C>>,
+async fn scan_csv(
+    State(state): State<AppState>,
     RawQuery(raw): RawQuery,
-) -> Result<Response, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
+) -> Result<Response, HttpError> {
     let request = ScanQuery::from_raw(raw.as_deref()).to_request()?;
     let rows = state.scan.execute(&request);
     let csv = scan_rows_csv(&rows)?;
@@ -687,22 +585,14 @@ where
         .into_response())
 }
 
-async fn programs_page<R, C>(
-    State(state): State<AppState<R, C>>,
+async fn programs_page(
+    State(state): State<AppState>,
     RawQuery(raw): RawQuery,
-) -> Result<Html<String>, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
+) -> Result<Html<String>, HttpError> {
     page(&ProgramsPage::new(&state, &district_filter(raw.as_deref())))
 }
 
-async fn programs_json<R, C>(State(state): State<AppState<R, C>>) -> Result<Response, HttpError>
-where
-    R: RunRepository + Send + Sync + 'static,
-    C: Clock + Send + Sync + 'static,
-{
+async fn programs_json(State(state): State<AppState>) -> Result<Response, HttpError> {
     Ok(Json(program_definitions_to_dto(
         state.simulate.default_programs(),
     ))
@@ -824,7 +714,14 @@ mod tests {
         assert!(request.frl);
         assert_eq!(request.lottery.as_str(), "b0");
         let no_lottery = ScanQuery::from_raw(Some("attr=d15"));
-        assert_eq!(no_lottery.lottery, "BD");
+        assert_eq!(
+            no_lottery.lottery, "BD",
+            "the API keeps the scanner default"
+        );
+        let page = ScanQuery::for_page(Some("attr=d15"));
+        assert_eq!(page.lottery, "", "the page prefills nothing");
+        assert_eq!(page.attributes, vec!["d15"]);
+        assert_eq!(ScanQuery::for_page(None).attributes.len(), 0);
         let blank = ScanQuery::from_raw(Some("attr=d15&lottery="));
         assert!(blank.to_request().is_err());
     }
