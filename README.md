@@ -80,7 +80,8 @@ docker compose up --build
 ```
 
 To host it, `deploy/` has a production Compose file and a cloud-init
-file that set up a $6 DigitalOcean Droplet from the image CI publishes.
+file that set up a $6 DigitalOcean Droplet from the image CI publishes,
+and CI can deploy each merge to that server over a single-purpose SSH key.
 See [operations](docs/operations.md) for the steps, backups, restore,
 migrations, and hosting, and the [API reference](docs/api.md) for the
 JSON endpoints.

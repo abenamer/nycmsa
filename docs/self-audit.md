@@ -259,6 +259,32 @@ matches the heading. No Rust code changed outside the test.
 | Code review on pull request 11 (low) | No findings |
 | Security review on pull request 11 | No findings. The change is static text in `home.html` with no template expression, no new input and no new link, plus a test assertion |
 
+## Local evidence: 2026-10-27 (deploy on merge)
+
+Same environment, branch `claude/deploy-on-merge` over `main` b9374e7.
+A `deploy` CI job runs `update.sh` on the server over SSH after
+`publish`; `deploy/add-deploy-key.sh` sets up the server side. The
+server side was exercised against a local OpenSSH server on port 2222 in
+this container, with the real script and a stub `/opt/nycmsa/update.sh`
+that reports who ran it.
+
+| Check | Outcome |
+| --- | --- |
+| `.github/workflows/ci.yml`, `deploy/cloud-init.yaml` | Parse as YAML; the workflow lists the jobs `docs`, `rust`, `docker`, `publish`, `deploy` |
+| `bash -n` on `add-deploy-key.sh` and `update.sh` | Passed |
+| `add-deploy-key.sh <public key>` | Created the `deploy` user, the `authorized_keys` entry with `restrict,command=...`, and the sudoers rule (`visudo -c` clean); printed `DEPLOY_HOST` and `DEPLOY_KNOWN_HOSTS` |
+| First run of the test | `Permission denied (publickey)`: `useradd --system` leaves the password field as `!`, which sshd (here with `UsePAM no`) treats as a locked account. The script now sets it to `*`; the rerun below passed |
+| `ssh deploy@127.0.0.1` with no command, as the workflow does | `update.sh ran as root`, exit 0 |
+| `ssh deploy@127.0.0.1 'id; cat /opt/nycmsa/.env'` | Ran `update.sh` instead; the requested command never ran |
+| `ssh -tt` (terminal request) | `PTY allocation request failed` |
+| Wrong host key in `known_hosts` with strict checking | `Host key verification failed`, exit 255 |
+| `update.sh` exiting 1 | ssh exits 1, so the job would fail |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+| Not run | The `deploy` job itself against the Droplet (needs the secrets the owner adds) and `update.sh`'s refresh of a file that is new on the server |
+| Code review on pull request 12 (low) | No findings |
+| Security review on pull request 12 | No findings. Checked: a leaked deploy key can only trigger `update.sh` (forced command, `restrict`, root-owned script and directory, sudo's `env_reset`); the job runs only for pushes to `main` under `production` with no repository permissions and writes secrets through `printf` from the environment, never into the script text; the fetch from `main` already ran as root before this change. Three hardenings applied: the sudoers rule ends in `""` so only the argument-less call is allowed, the script rejects multi-line keys and runs `ssh-keygen -l` on the key, and the workflow passes `IdentitiesOnly=yes` |
+| Re-test after hardening | A two-line key and a garbage key are rejected (exit 2); the good key leaves one `authorized_keys` line; the workflow call still runs `update.sh` as root; `sudo -n /opt/nycmsa/update.sh evil` as `deploy` is refused |
+
 ## Local evidence: 2026-10-27 (school demand history)
 
 Same environment, branch `claude/infohub-demand` over `main` b9374e7.
