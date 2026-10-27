@@ -11,3 +11,4 @@ tags: [architecture, decisions]
 - [ADR 0002 — Run store port and PostgreSQL adapter](decisions/0002-run-store-and-postgres.md)
 - [ADR 0003 — Waitlist number assumption](decisions/0003-waitlist-number-assumption.md)
 - [ADR 0004 — Reference data in PostgreSQL](decisions/0004-reference-data-in-postgres.md)
+- [ADR 0005 — No user input on the server](decisions/0005-no-user-input-on-the-server.md)

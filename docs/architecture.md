@@ -18,11 +18,12 @@ For a simulation request through the web interface:
 
 1. Inbound adapter: `adapters::http::simulate_form` or `simulate_json`
    parses the input into a `SimulationRequest`.
-2. Application use case: `application::SimulateStudent::compute` runs the
-   trials; `SimulateStudent::record` stamps the run and stores it.
-3. Port trait: `application::RunRepository` and `application::Clock`.
-4. Outbound adapter: `adapters::InMemoryRunRepository` or
-   `adapters::PostgresRunRepository`, and `adapters::SystemClock`.
+2. Application use case: `application::SimulateStudent::execute` runs the
+   trials and returns the report. Nothing is stored and no port is
+   involved: the server keeps no record of a visitor's answers
+   ([ADR 0005](decisions/0005-no-user-input-on-the-server.md)).
+3. The inbound adapter renders the report, and the result page hands the
+   answers back to the browser, which keeps them in its own storage.
 
 For the catalog scan, `adapters::http::scan_page` calls
 `application::ScanCatalog::execute`, which calls the pure `domain::scan`.
@@ -63,8 +64,7 @@ hand-entered programs on top.
 | `adapters::open_data` | Downloads state test results from NYC Open Data. |
 | `adapters::test_results` | Reads and writes a results CSV for offline tools. |
 | `adapters::postgres_reference` | PostgreSQL store of the catalog, results, programs, defaults, and profiles. |
-| `adapters::in_memory_runs` | Bounded in-process run store. |
-| `adapters::postgres_runs` | PostgreSQL run store through SQLx. |
+| `adapters::postgres` | The PostgreSQL pool and the migrations the stores share. |
 | `adapters::http` | Axum routes, Askama pages, JSON API. |
 | `adapters::cli` | Clap commands and text rendering. |
 | `composition` | Composition root: one function per subcommand. |
@@ -78,19 +78,20 @@ and `thiserror`.
 ## Dispatch
 
 Use cases take adapter type parameters bounded by port traits
-([REAS-ARCH-006](https://github.com/abenamer/reas/blob/main/standard/ports-and-adapters.md#reas-arch-006)).
-`composition::run_serve` uses `PostgresRunRepository`; the HTTP tests
-build the same router with `InMemoryRunRepository` through the generic
-`build_state`, so both use static dispatch.
-`RunRepository` uses the `async_trait` macro, which supplies boxed `Send`
-futures; see [ADR 0002](decisions/0002-run-store-and-postgres.md).
+([REAS-ARCH-006](https://github.com/abenamer/reas/blob/main/standard/ports-and-adapters.md#reas-arch-006));
+the reference-data use cases are generic over the stores and downloaders,
+and `composition` names the concrete types. The store ports use the
+`async_trait` macro, which supplies boxed `Send` futures; see
+[ADR 0002](decisions/0002-run-store-and-postgres.md) for the original
+reasoning and [ADR 0005](decisions/0005-no-user-input-on-the-server.md)
+for why the run store it introduced is gone. The HTTP state holds only
+reference data loaded at startup, so the router is not generic.
 
 ## Async work and CPU work
 
 The simulation is CPU work. The HTTP adapter runs
-`SimulateStudent::compute` in `tokio::task::spawn_blocking` under a
-`Semaphore` with one permit per CPU, then awaits
-`SimulateStudent::record` on the executor
+`SimulateStudent::execute` in `tokio::task::spawn_blocking` under a
+`Semaphore` with one permit per CPU
 ([REAS-RUST-007](https://github.com/abenamer/reas/blob/main/standard/core-rust.md#reas-rust-007)).
 `Trials` caps one request at 5,000,000 trials.
 
@@ -105,9 +106,10 @@ runtime. `fetch` and `serve` run on a multi-threaded Tokio runtime.
 
 ## State
 
-A run has no workflow states: a request either produces a report or an
-error before anything is stored. No state machine was needed. Stored runs
-are immutable.
+The server holds no per-visitor state: a request either produces a
+report or an error, and nothing about it survives the response. There is
+no session, no cookie, and no state machine. The reference data is
+immutable while the server runs; a refresh is a restart.
 
 ## Errors
 

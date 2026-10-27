@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Result #{{ id }}{% endblock %}
+{% block title %}Your chances{% endblock %}
 {% block content %}
 <h1>Your chances</h1>
 <p class="lead">{{ headline }}</p>
@@ -71,5 +71,21 @@
 {% endfor %}
 </ul>
 {% include "caveats.html" %}
-<p class="muted">Result #{{ id }}, {{ created_at }}. <a href="/">Try different answers</a> · <a href="/api/runs/{{ id }}">All the numbers (JSON)</a></p>
+<p class="muted"><a href="/">Try different answers</a>. This result is kept in your browser's earlier results, not on the server.</p>
+<div id="result-record" hidden data-answers="{{ answers_json }}" data-programs="{{ programs_line }}" data-lottery="{{ lottery_line }}" data-chance="{{ chance_short }}"></div>
+<script>
+(function () {
+  // Remember this result in the browser. The server keeps nothing.
+  var el = document.getElementById('result-record');
+  var KEY = 'nycmsa.results', MAX = 20;
+  var answers; try { answers = JSON.parse(el.dataset.answers); } catch (e) { answers = {}; }
+  var entry = { at: Date.now(), answers: answers, programs: el.dataset.programs, lottery: el.dataset.lottery, chance: el.dataset.chance };
+  var list; try { list = JSON.parse(localStorage.getItem(KEY)); } catch (e) { list = null; }
+  if (!Array.isArray(list)) list = [];
+  // A reload or "Show again" within two minutes replaces the newest entry.
+  if (list.length && list[0].answers && JSON.stringify(list[0].answers) === el.dataset.answers && entry.at - list[0].at < 120000) list.shift();
+  list.unshift(entry);
+  try { localStorage.setItem(KEY, JSON.stringify(list.slice(0, MAX))); } catch (e) {}
+})();
+</script>
 {% endblock %}

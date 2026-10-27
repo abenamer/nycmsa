@@ -134,6 +134,22 @@ explicitly. The picker table now shares the scan page's sort script
 | Code review on pull request 2 | Five findings, all applied: the arrow styling is scoped to the move buttons so × keeps its own look; the sort script uses the column's `cellIndex`, computes each row's key once, and takes Enter or Space on a focused heading with `aria-sort`; one `ScoreCell { shown, raw }` type serves both the scan and picker rows. |
 | Browser check after the review fixes | Passed: × is muted grey at 1.1rem and turns red on hover; the arrows are ink at 0.8rem; focusing "Seats" and pressing Enter twice sorts 662 rows descending with `aria-sort="descending"`, `tabindex="0"` and `role="button"`; Space on "ELA" sorts ascending with blanks last and clears the "Seats" marker; the scan page's "Seats" heading still sorts 642 rows. |
 
+## Local evidence: 2026-10-28 (no user input on the server)
+
+Same environment. Simulation runs are no longer stored; results live in
+the browser (ADR 0005). The `runs` table, its stores, port, and
+endpoints are removed; the questions and scan pages open blank; every
+page carries the privacy note and a "forget everything" button.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt`, `clippy -D warnings`, `cargo test --locked` | Passed: 99 unit tests, 14 HTTP tests; 1 ignored |
+| `cargo test --locked --test postgres_reference -- --ignored` | Passed against the local server through the shared `adapters::postgres` pool |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+| Migration 4 on the local database | Applied by `serve`; `to_regclass('runs')` is null afterwards, four migrations recorded |
+| Browser check with Playwright (Chromium) against `nycmsa serve` | Passed: `/` opens with an empty lottery field, empty ranking, no district or family chip checked; submitting the form renders the result at `/simulate` with status 200 and no `Set-Cookie`; the browser's `nycmsa.results` then holds one entry (programs, lottery prefix, chance, answers) and still one after a reload; the context has zero cookies; `/` lists that result and "Show again" recomputes it without adding a duplicate; "Forget everything this browser remembers" leaves no `nycmsa.` key and an empty form; `/scan` opens with an empty lottery field and no rows; `/profiles` without a district says to pick one. |
+| HTTP tests | `/api/simulate` returns the report with no `id`; `/api/runs`, `/api/runs/1` and `/runs/1` return 404; the result page carries `data-answers` with the submitted fields. |
+
 ## Remote evidence
 
 | Revision | Run | Outcome |

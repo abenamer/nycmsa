@@ -5,11 +5,9 @@
 //! `student.json`. Field aliases keep the old names readable.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::application::Run;
 use crate::domain::program::DuplicateProgramCode;
 use crate::domain::{
     with_boroughs, Attribute, Attrition, GroupDemand, InvalidAttribute, InvalidAttrition,
@@ -215,14 +213,6 @@ pub struct ReportDto {
     pub lottery_fraction: Option<f64>,
     pub rows: Vec<ProgramRowDto>,
     pub summary: SummaryDto,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RunDto {
-    pub id: u64,
-    pub created_at_unix: u64,
-    pub student: StudentDto,
-    pub report: ReportDto,
 }
 
 /// Body of `GET /api/scan`.
@@ -496,21 +486,6 @@ pub fn report_to_dto(report: &Report) -> ReportDto {
 }
 
 /// Seconds since the Unix epoch; a time before the epoch reads as zero.
-pub fn unix_seconds(time: SystemTime) -> u64 {
-    time.duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
-
-pub fn run_to_dto(run: &Run) -> RunDto {
-    RunDto {
-        id: run.id.get(),
-        created_at_unix: unix_seconds(run.created_at),
-        student: student_to_dto(&run.student),
-        report: report_to_dto(&run.report),
-    }
-}
-
 pub fn scan_row_to_dto(row: &ScanRow) -> ScanRowDto {
     ScanRowDto {
         district: row.district.as_str().to_owned(),
@@ -728,17 +703,5 @@ mod tests {
         let json = serde_json::to_string(&dto).expect("serializes");
         let back: ReportDto = serde_json::from_str(&json).expect("parses");
         assert_eq!(report_from_dto(back).expect("valid"), report);
-    }
-
-    #[test]
-    fn unix_seconds_clamps_times_before_the_epoch() {
-        assert_eq!(
-            unix_seconds(UNIX_EPOCH - std::time::Duration::from_secs(5)),
-            0
-        );
-        assert_eq!(
-            unix_seconds(UNIX_EPOCH + std::time::Duration::from_secs(5)),
-            5
-        );
     }
 }

@@ -2,27 +2,15 @@
 //! worded here so the templates stay free of logic.
 
 use askama::Template;
-use time::format_description::well_known::Rfc3339;
-use time::OffsetDateTime;
 
 use crate::adapters::cli::render::{pct0, thousands};
-use crate::adapters::dto::StudentDto;
-use crate::application::Run;
-use crate::application::{Clock, RunRepository};
 use crate::domain::{
-    Borough, DistrictCode, ProgramDefinitions, ProgramFocus, ProgramRow, Reach, ScanRequest,
-    ScanRow, SelectionKind, WaitlistNumbers, TAG_THRESHOLD,
+    Borough, DistrictCode, ProgramDefinitions, ProgramFocus, ProgramRow, Reach, Report,
+    ScanRequest, ScanRow, SelectionKind, Student, WaitlistNumbers, TAG_THRESHOLD,
 };
 
 use super::choices::{attribute_label, OutlookChoice, TalentTestChoice, WaitlistChoice};
 use super::{AppState, ScanQuery, SimulateForm};
-
-/// `2026-10-26T19:40:00Z`, or the raw seconds when formatting fails.
-pub fn format_time(time: std::time::SystemTime) -> String {
-    OffsetDateTime::from(time)
-        .format(&Rfc3339)
-        .unwrap_or_else(|_| format!("{}s", crate::adapters::dto::unix_seconds(time)))
-}
 
 /// A whole-percent chance; tiny chances read as "under 1%".
 pub fn chance(p: f64) -> String {
@@ -76,15 +64,6 @@ fn district_chips(districts: &[DistrictCode], selected: &[String]) -> Vec<Distri
             }
         })
         .collect()
-}
-
-/// Program codes from the `<prefix>_<code>` attributes, comma-joined.
-fn codes_with_prefix(attributes: &[String], prefix: &str) -> String {
-    attributes
-        .iter()
-        .filter_map(|a| a.strip_prefix(prefix))
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 /// Values shown in the simulate form.
@@ -142,22 +121,17 @@ impl FormValues {
         }
     }
 
-    pub fn from_student(student: &StudentDto, districts: &[DistrictCode]) -> Self {
-        let took_test = student.attributes.iter().any(|a| a == "mark_twain_test");
+    /// No answer prefilled. The model-assumption chips take their documented
+    /// defaults (the DOE's waitlist rule, last year's numbers as published);
+    /// everything about the child is left for the parent to enter.
+    pub fn blank(districts: &[DistrictCode]) -> Self {
         Self::build(
             districts,
-            student.ranking.join(", "),
-            student.lottery_number.clone().unwrap_or_default(),
-            &student.attributes,
-            (
-                codes_with_prefix(&student.attributes, "sibling_"),
-                codes_with_prefix(&student.attributes, "zoned_"),
-                codes_with_prefix(&student.attributes, "continuing_"),
-            ),
-            Some(TalentTestChoice::from_student(
-                took_test,
-                student.talent_test_percentile,
-            )),
+            String::new(),
+            String::new(),
+            &[],
+            (String::new(), String::new(), String::new()),
+            Some(TalentTestChoice::Unknown),
             Some(WaitlistChoice::Redrawn),
             Some(OutlookChoice::AsPublished),
         )
@@ -213,20 +187,6 @@ fn district_links(path: &str, districts: &[DistrictCode], selected: &[String]) -
         .collect()
 }
 
-/// The districts to show when the query names none: those of the default
-/// student.
-fn default_districts(student: &StudentDto) -> Vec<String> {
-    let mut districts: Vec<String> = student
-        .attributes
-        .iter()
-        .filter_map(|a| a.strip_prefix('d'))
-        .filter(|d| !d.is_empty() && d.chars().all(|c| c.is_ascii_digit()))
-        .map(str::to_owned)
-        .collect();
-    districts.sort_by_key(|d| d.parse::<u32>().unwrap_or(u32::MAX));
-    districts
-}
-
 /// How a program picks students, in plain words.
 fn how_it_admits(kind: SelectionKind) -> &'static str {
     match kind {
@@ -235,49 +195,16 @@ fn how_it_admits(kind: SelectionKind) -> &'static str {
     }
 }
 
-pub struct RecentRun {
-    pub id: u64,
-    pub created_at: String,
-    pub ranking: String,
-    pub lottery: String,
-    pub chance: String,
-}
-
 #[derive(Template)]
 #[template(path = "home.html")]
 pub struct HomePage {
     pub form: FormValues,
-    pub recent: Vec<RecentRun>,
     pub error: Option<String>,
 }
 
 impl HomePage {
-    pub fn new(form: FormValues, recent: &[Run], error: Option<String>) -> Self {
-        Self {
-            form,
-            recent: recent
-                .iter()
-                .map(|run| RecentRun {
-                    id: run.id.get(),
-                    created_at: format_time(run.created_at),
-                    ranking: run
-                        .student
-                        .ranking
-                        .codes()
-                        .iter()
-                        .map(|c| c.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    lottery: run
-                        .student
-                        .lottery_number
-                        .as_ref()
-                        .map_or_else(|| "not given".to_owned(), |l| l.to_string()),
-                    chance: chance(run.report.summary.p_any_offer),
-                })
-                .collect(),
-            error,
-        }
+    pub fn new(form: FormValues, error: Option<String>) -> Self {
+        Self { form, error }
     }
 }
 
@@ -310,11 +237,7 @@ pub struct PickerPage {
 }
 
 impl PickerPage {
-    pub fn new<R, C>(state: &AppState<R, C>) -> Self
-    where
-        R: RunRepository,
-        C: Clock,
-    {
+    pub fn new(state: &AppState) -> Self {
         let definitions = state.simulate.default_programs();
         let scores_year = state.scan.scores_year();
         let rows = state
@@ -394,17 +317,11 @@ pub struct ProfilesPage {
 }
 
 impl ProfilesPage {
-    pub fn new<R, C>(state: &AppState<R, C>, requested_districts: &[String]) -> Self
-    where
-        R: RunRepository,
-        C: Clock,
-    {
+    pub fn new(state: &AppState, requested_districts: &[String]) -> Self {
         let districts = state.scan.districts();
-        let selected = if requested_districts.is_empty() {
-            default_districts(&state.default_student)
-        } else {
-            requested_districts.to_vec()
-        };
+        // No district chosen shows nothing: every profile at once is a very
+        // long page, and the picker links here with a district.
+        let selected = requested_districts.to_vec();
         let district_of: std::collections::BTreeMap<&str, String> = state
             .scan
             .programs()
@@ -538,10 +455,14 @@ pub struct StageRow {
 }
 
 #[derive(Template)]
-#[template(path = "run.html")]
-pub struct RunPage {
-    pub id: u64,
-    pub created_at: String,
+#[template(path = "result.html")]
+pub struct ResultPage {
+    /// The submitted answers as JSON, for the browser to remember.
+    pub answers_json: String,
+    /// One line for the browser's list of earlier results.
+    pub programs_line: String,
+    pub lottery_line: String,
+    pub chance_short: String,
     pub headline: String,
     pub no_offer_line: String,
     pub first_offer_line: Option<String>,
@@ -553,10 +474,8 @@ pub struct RunPage {
     pub waitlist_rule: String,
 }
 
-impl RunPage {
-    pub fn new(run: &Run) -> Self {
-        let report = &run.report;
-        let student = &run.student;
+impl ResultPage {
+    pub fn new(form: &SimulateForm, student: &Student, report: &Report) -> Self {
         let p = &report.parameters;
         let took_test = student
             .attributes
@@ -679,8 +598,19 @@ impl RunPage {
             .collect();
 
         Self {
-            id: run.id.get(),
-            created_at: format_time(run.created_at),
+            answers_json: serde_json::to_string(form).unwrap_or_else(|_| "{}".to_owned()),
+            programs_line: student
+                .ranking
+                .codes()
+                .iter()
+                .map(|c| c.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+            lottery_line: student
+                .lottery_number
+                .as_ref()
+                .map_or_else(|| "not given".to_owned(), |l| l.to_string()),
+            chance_short: chance(report.summary.p_any_offer),
             headline: format!(
                 "About a {} chance of an offer from one of these programs.",
                 chance(report.summary.p_any_offer)
@@ -896,14 +826,10 @@ pub struct ProgramsPage {
 }
 
 impl ProgramsPage {
-    pub fn new<R, C>(state: &AppState<R, C>, requested_districts: &[String]) -> Self
-    where
-        R: RunRepository,
-        C: Clock,
-    {
+    pub fn new(state: &AppState, requested_districts: &[String]) -> Self {
         let districts = state.scan.districts();
         let selected = if requested_districts.is_empty() {
-            default_districts(&state.default_student)
+            districts.iter().map(|d| d.as_str().to_owned()).collect()
         } else {
             requested_districts.to_vec()
         };
@@ -917,7 +843,11 @@ impl ProgramsPage {
             .collect();
         Self {
             district_links: district_links("/programs", &districts, &selected),
-            shown_districts: selected.join(", "),
+            shown_districts: if requested_districts.is_empty() {
+                "all districts".to_owned()
+            } else {
+                selected.join(", ")
+            },
             programs: definitions
                 .iter()
                 .filter(|p| in_district.contains(p.code()))

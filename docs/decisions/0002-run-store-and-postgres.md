@@ -7,6 +7,11 @@ tags: [decision, persistence, sqlx]
 
 # ADR 0002 — Run store port and PostgreSQL adapter
 
+Status: superseded by
+[ADR 0005](0005-no-user-input-on-the-server.md). The run store is gone;
+the SQLx, migration, and `async_trait` choices below carry over to the
+reference-data stores of [ADR 0004](0004-reference-data-in-postgres.md).
+
 ## Context
 
 Runs must survive a container restart. REAS-DATA rules call for explicit
