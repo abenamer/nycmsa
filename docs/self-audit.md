@@ -243,6 +243,22 @@ from `/etc/os-release`, so either system gets the right repository.
 | Code review on pull request 10 (low) | No findings |
 | Security review on pull request 10 | No findings. Checked: both new lines source the root-owned `/etc/os-release` that the vendor image ships, before any user or service can write to the disk; `$ID` expands inside a quoted URL path on `download.docker.com` over TLS, so it cannot change the host the key comes from; the apt line stays bound to that host and to `signed-by=docker.asc` |
 
+## Local evidence: 2026-10-27 (home page heading)
+
+Same environment, revision on branch `claude/home-heading` over `main`
+b23da1e. The home page now opens with the heading "NYC Middle School
+Admissions" and the subheading "What are the chances of your child
+getting into the NYC middle school of your choice?"; the browser title
+matches the heading. No Rust code changed outside the test.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt --all`, `cargo check --all-targets`, `cargo clippy --all-targets -- -D warnings` | Passed |
+| `cargo test` | 102 unit tests and 14 HTTP tests passed; the blank-home test asserts the heading and subheading |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+| Code review on pull request 11 (low) | No findings |
+| Security review on pull request 11 | No findings. The change is static text in `home.html` with no template expression, no new input and no new link, plus a test assertion |
+
 ## Remote evidence
 
 | Revision | Run | Outcome |
