@@ -3,7 +3,7 @@
 {% block content %}
 <h1>What each program is about</h1>
 <p class="muted">For every school in the catalog we read its MySchools page: the school overview, the course lists, and each program's description. The "kind of program" tags come from whole words found in the texts, each with a confidence. A match in the admissions method, the program name, the program description, or the school name counts a lot; a match in the school overview counts a little, because that text describes the whole school. A kind is a tag at 50% or more; weaker signals are shown with their percentage, and every match is listed. {{ total }} programs have a profile. Read the texts yourself before you trust a tag.</p>
-<p class="muted">Showing districts {{ shown_districts }}. Click a district to add or remove it.</p>
+<p class="muted">{% if shown_districts.is_empty() %}Pick a district to see its programs.{% else %}Showing districts {{ shown_districts }}. Click a district to add or remove it.{% endif %}</p>
 <div class="chips">
 {% for l in district_links %}
   <a class="chip-link{% if l.active %} active{% endif %}" href="{{ l.href }}">{{ l.label }}</a>

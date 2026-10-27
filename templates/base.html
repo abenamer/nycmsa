@@ -14,6 +14,8 @@
   header a.brand { font-weight: 700; }
   header nav a { color: var(--muted); margin-right: 1rem; }
   main { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+  footer { max-width: 1100px; margin: 2rem auto 0; padding: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
+  button.link { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; font: inherit; cursor: pointer; }
   h1 { font-size: 1.5rem; margin: .4rem 0 .6rem; }
   h2 { font-size: 1.15rem; margin: 1.6rem 0 .5rem; }
   p.muted, .muted { color: var(--muted); }
@@ -94,5 +96,16 @@
 <main>
 {% block content %}{% endblock %}
 </main>
+<footer>
+  <p><strong>Your privacy.</strong> Your answers, your program list, and your results are kept only in this browser (local storage, not cookies), so you can come back to them. The server works out your chances and keeps nothing you typed. There are no accounts, no cookies, no visitor statistics, and no third-party scripts. <button type="button" id="forget-all" class="link">Forget everything this browser remembers</button></p>
+</footer>
+<script>
+document.getElementById('forget-all').onclick = function () {
+  try {
+    Object.keys(localStorage).filter(function (k) { return k.indexOf('nycmsa.') === 0; }).forEach(function (k) { localStorage.removeItem(k); });
+  } catch (e) {}
+  location.href = '/';
+};
+</script>
 </body>
 </html>

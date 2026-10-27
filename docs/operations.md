@@ -17,8 +17,10 @@ tags: [operations, docker, postgresql]
 
 ## Run locally
 
-The server reads everything from PostgreSQL: runs, the catalog, the test
-results, the hand-entered programs, and the form defaults.
+The server reads everything from PostgreSQL: the catalog, the test
+results, the hand-entered programs, and the program profiles. The
+database holds what the school system publishes and nothing a visitor
+types; see [ADR 0005](decisions/0005-no-user-input-on-the-server.md).
 
 1. Create a database and export its URL, for example
    `export DATABASE_URL=postgres://nycmsa:secret@127.0.0.1/nycmsa`.
@@ -58,11 +60,11 @@ disposable database:
 
 ```bash
 NYCMSA_TEST_DATABASE_URL=postgres://user:pass@127.0.0.1/db \
-  cargo test --test postgres_runs -- --ignored
+  cargo test --test postgres_reference -- --ignored
 ```
 
-It applies the migrations to that database, inserts two rows, and deletes
-them.
+It applies the migrations to that database, stores and reads back a
+snapshot of each reference set, and deletes what it stored.
 
 ## Deploy with Docker Compose
 
@@ -92,7 +94,8 @@ which is its purpose: every page is public and anonymous.
 1. Run `docker compose exec db pg_dump -U nycmsa -Fc nycmsa > nycmsa-$(date +%F).dump`.
 2. Copy the file to storage independent of the Docker host.
 
-Expected result: a file of a few kilobytes per hundred runs.
+Expected result: a file of a few megabytes (the catalog and profile
+snapshots). The dump holds reference data only, nothing from visitors.
 
 ## Restore the database
 
@@ -102,7 +105,8 @@ Expected result: a file of a few kilobytes per hundred runs.
 3. Restore: `docker compose exec -T db pg_restore -U nycmsa -d nycmsa < nycmsa-YYYY-MM-DD.dump`.
 4. Start the app: `docker compose start app`.
 
-Expected result: `GET /api/runs` lists the restored runs.
+Expected result: `GET /api/programs` lists the programs and `/pick` shows
+every catalog program again.
 
 Recovery: if step 3 fails, the database is empty. Repeat step 2 and
 step 3 with a different dump. The app does not start until the database

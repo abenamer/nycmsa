@@ -8,7 +8,8 @@
 use std::collections::BTreeSet;
 use std::time::{Duration, UNIX_EPOCH};
 
-use nycmsa::adapters::{PostgresReferenceData, PostgresRunRepository};
+use nycmsa::adapters::postgres;
+use nycmsa::adapters::PostgresReferenceData;
 use nycmsa::application::{
     CatalogSnapshot, CatalogStore, ProfileStore, ProgramStore, StudentDefaultsStore,
     TestResultsStore,
@@ -24,11 +25,9 @@ use nycmsa::domain::{
 async fn reference_snapshots_round_trip_and_the_latest_wins() {
     let url = std::env::var("NYCMSA_TEST_DATABASE_URL")
         .expect("NYCMSA_TEST_DATABASE_URL must point at a PostgreSQL database");
-    let runs = PostgresRunRepository::connect(&url, 2)
-        .await
-        .expect("connects");
-    runs.migrate().await.expect("migrates");
-    let store = PostgresReferenceData::new(runs.pool().clone());
+    let pool = postgres::connect(&url, 2).await.expect("connects");
+    postgres::migrate(&pool).await.expect("migrates");
+    let store = PostgresReferenceData::new(pool.clone());
     let at = UNIX_EPOCH + Duration::from_secs(1_800_000_000);
     let tag = format!("test-{}", std::process::id());
 
@@ -175,7 +174,7 @@ async fn reference_snapshots_round_trip_and_the_latest_wins() {
     ] {
         sqlx::query(&format!("DELETE FROM {table} WHERE source LIKE $1"))
             .bind(format!("{tag}%"))
-            .execute(runs.pool())
+            .execute(&pool)
             .await
             .expect("cleanup");
     }

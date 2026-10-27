@@ -9,11 +9,13 @@ tags: [api, http, cli]
 
 ## Access
 
-Every endpoint is anonymous and meant to be public: the deployment in
-`deploy/` serves the app to everyone behind Caddy. The server binds to
-`127.0.0.1:8080` unless `--bind` says otherwise. Anything a visitor
-submits is visible to every other visitor through the runs endpoints, so
-the form asks only for a two-letter lottery prefix and program codes.
+Every endpoint is anonymous, stateless, and meant to be public: the
+deployment in `deploy/` serves the app to everyone behind Caddy. The
+server binds to `127.0.0.1:8080` unless `--bind` says otherwise. It
+sets no cookies and stores nothing a visitor submits: a simulation
+request is answered and forgotten
+([ADR 0005](decisions/0005-no-user-input-on-the-server.md)). There is no
+endpoint that lists or replays earlier requests.
 
 ## Limits
 
@@ -24,27 +26,29 @@ the form asks only for a two-letter lottery prefix and program codes.
 | Concurrent simulations | one per CPU | `HttpLimits::cpu_permits` |
 | Trials per run | 5,000,000 | `domain::simulation::MAX_TRIALS` |
 
+There is no per-client rate limit. The semaphore and the timeout bound
+what one request costs, not how many requests one client sends; a busy
+client can keep every CPU permit and make other visitors wait. A public
+deployment that needs fairness puts the limit in the proxy in front.
+
 ## Endpoints
 
 | Method and path | Purpose | Success | Errors |
 | --- | --- | --- | --- |
-| `GET /` | Questions and recent runs; `ranking=K1,K2` prefills the list from the picker | 200 HTML | |
-| `POST /simulate` | Form submit | 303 to `/runs/{id}` | 422 HTML with the message |
-| `GET /runs/{id}` | Report page | 200 HTML | 404 |
-| `GET /scan` | Scan questions and results | 200 HTML | 422 HTML |
+| `GET /` | Questions, blank; `ranking=K1,K2` prefills the list from the picker | 200 HTML | |
+| `POST /simulate` | Form submit; the result page in the same response | 200 HTML | 422 HTML with the message |
+| `GET /scan` | Scan questions; results only with a query string | 200 HTML | 422 HTML |
 | `GET /pick` | Program picker: every program in a sortable table with district, kind, and screened filters; the chosen list is kept in the browser | 200 HTML | |
 | `GET /profiles` | What each program is about, with tags and evidence, filtered by repeated `district` keys | 200 HTML | |
 | `GET /programs` | Program definitions, filtered by repeated `district` keys | 200 HTML | |
-| `POST /api/simulate` | Run a simulation | 201 JSON run | 422 |
-| `GET /api/runs` | Recent runs | 200 JSON array | |
-| `GET /api/runs/{id}` | One run | 200 JSON run | 404 |
+| `POST /api/simulate` | Run a simulation | 200 JSON report | 422 |
 | `GET /api/scan` | Scan rows | 200 JSON | 422 |
 | `GET /api/scan.csv` | Scan rows as CSV | 200 `text/csv` | 422 |
 | `GET /api/programs` | Program definitions | 200 JSON | |
 | `GET /healthz` | Liveness | 200 `ok` | |
 
-A repository failure gives 503. A rendering failure gives 500. Error
-bodies are JSON: `{"error": "<message>"}`.
+A rendering failure gives 500. Error bodies are JSON:
+`{"error": "<message>"}`.
 
 ### `POST /api/simulate`
 
@@ -76,28 +80,24 @@ bodies are JSON: `{"error": "<message>"}`.
 - `programs` optionally replaces the server's definitions for this run.
   It has the shape of the `programs` object in `data/programs.json`.
 
-The response is the run:
+The response is the report. It carries no identifier because nothing is
+stored:
 
 ```json
 {
-  "id": 1,
-  "created_at_unix": 1793046796,
-  "student": { "...": "as sent, normalized" },
-  "report": {
-    "parameters": { "...": "as applied" },
-    "lottery_fraction": 0.73828125,
-    "rows": [
-      {
-        "rank": 1, "code": "K187A", "name": "Academy for Scientific Research",
-        "selection": "lottery", "group_name": "District 20 students and residents",
-        "initial_rate": 0.132, "waitlist_rate": 0.0,
-        "p_initial": 0.0, "p_waitlist": 0.002, "p_any": 0.002
-      }
-    ],
-    "summary": {
-      "p_initial_offer": 0.936, "p_any_offer": 0.981, "p_no_offer": 0.019,
-      "p_lottery_offer": 0.026, "p_screened_offer": 0.970
+  "parameters": { "...": "as applied" },
+  "lottery_fraction": 0.73828125,
+  "rows": [
+    {
+      "rank": 1, "code": "K187A", "name": "Academy for Scientific Research",
+      "selection": "lottery", "group_name": "District 20 students and residents",
+      "initial_rate": 0.132, "waitlist_rate": 0.0,
+      "p_initial": 0.0, "p_waitlist": 0.002, "p_any": 0.002
     }
+  ],
+  "summary": {
+    "p_initial_offer": 0.936, "p_any_offer": 0.981, "p_no_offer": 0.019,
+    "p_lottery_offer": 0.026, "p_screened_offer": 0.970
   }
 }
 ```
@@ -118,12 +118,16 @@ The JSON API exposes the inputs directly.
 | `outlook` | `as_published`, `hopeful` | `parameters.attrition` 1.0 or 1.3 |
 
 The form fixes `trials` at 200,000, `seed` at 0, and `demand_sd` at 0.15.
+The form opens blank: the server prefills no answer. The result page
+carries the submitted fields in a `data-answers` attribute (the JSON
+shape of the form) so the browser can keep them.
 
 ### `GET /api/scan`
 
 Query parameters: `attrs` (comma-separated) or repeated `attr` keys, `frl`
 (`1`, `true`, `on`, or `yes`), `lottery` (hex prefix). With no query
-string the defaults are `d15,d20`, not FRL, and `BD`. The
+string the JSON endpoint uses the Python scanner's defaults, `d15,d20`,
+not FRL, and `BD`; the HTML page shows blank questions instead. The
 response lists the attributes, the FRL flag, the lottery prefix and
 fraction, and the rows in reach order. Each row also carries the school's
 `dbn`, `scores_year`, `ela_proficient_pct`, and `math_proficient_pct`.
@@ -152,9 +156,20 @@ filter; the default is `info`. A failed command exits with status 1 and
 prints the error chain to stderr. `sim` and `scan` read files and need no
 database.
 
-## Browser storage
+## Browser storage and privacy
 
-The picker keeps the chosen list and its filters, and the questions page
-keeps its answers, in the browser's `localStorage` under keys that start
-with `nycmsa.`. Nothing is sent to the server until the form is
-submitted. The Reset buttons clear those keys.
+Everything about a visitor lives in that visitor's browser, in
+`localStorage` under keys that start with `nycmsa.`:
+
+| Key | Holds | Written by |
+| --- | --- | --- |
+| `nycmsa.ranking` | The chosen program codes | picker and questions page |
+| `nycmsa.pickerFilters` | The picker's filters and search text | picker |
+| `nycmsa.answers` | The other answers on the questions page | questions page, on submit |
+| `nycmsa.results` | The last 20 results: when, the answers, programs, lottery prefix, chance | result page |
+
+Nothing is sent to the server until a form is submitted, and the server
+keeps nothing from it. No cookie is set. There is no analytics, no
+visitor statistics, and no third-party script. Every page's footer says
+so and has a "Forget everything this browser remembers" button that
+removes every `nycmsa.` key; the Reset buttons clear subsets.

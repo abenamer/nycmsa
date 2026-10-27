@@ -41,9 +41,10 @@ snapshot to the database; older snapshots stay.
 
 ## Run
 
-Everything the server reads lives in PostgreSQL: simulation runs, the
-MySchools catalog, state test results, the hand-entered programs, and the
-form defaults.
+Everything the server reads lives in PostgreSQL: the MySchools catalog,
+state test results, the hand-entered programs, and the program profiles.
+Nothing a visitor types is stored there. Answers and results stay in the
+visitor's browser.
 
 ```bash
 export DATABASE_URL=postgres://nycmsa:secret@127.0.0.1/nycmsa
@@ -80,7 +81,7 @@ JSON endpoints.
 | --- | --- |
 | `src/domain/` | Model and pure rules: lottery, programs, student, simulation, catalog scan |
 | `src/application/` | Use cases and ports |
-| `src/adapters/` | HTTP (Axum, Askama), CLI (Clap), JSON files, MySchools parser and client, in-memory and PostgreSQL run stores |
+| `src/adapters/` | HTTP (Axum, Askama), CLI (Clap), JSON files, MySchools parser and client, PostgreSQL reference store |
 | `src/composition.rs` | Composition root |
 | `data/` | Seed files: `programs.json`, `student.json` |
 | `tests/fixtures/` | A districts 15 and 20 catalog for the HTTP tests |

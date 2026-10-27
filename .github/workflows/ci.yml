@@ -43,7 +43,7 @@ jobs:
       - name: PostgreSQL integration test
         env:
           NYCMSA_TEST_DATABASE_URL: postgres://nycmsa:nycmsa@127.0.0.1:5432/nycmsa_test
-        run: cargo test --locked --test postgres_runs --test postgres_reference -- --ignored
+        run: cargo test --locked --test postgres_reference -- --ignored
       - name: Dependency audit
         run: |
           cargo install cargo-audit --locked

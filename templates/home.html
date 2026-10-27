@@ -82,18 +82,13 @@
 <p class="muted">Last year's seats and applicants for each priority group are on the <a href="/programs">numbers page</a>.</p>
 
 <h2>Earlier results</h2>
-{% if recent.is_empty() %}
-<p class="muted">Nothing yet.</p>
-{% else %}
-<table>
-  <thead><tr><th>Result</th><th>When (UTC)</th><th>Programs</th><th>Lottery number</th><th class="num">Chance of an offer</th></tr></thead>
-  <tbody>
-  {% for r in recent %}
-    <tr><td><a href="/runs/{{ r.id }}">#{{ r.id }}</a></td><td>{{ r.created_at }}</td><td>{{ r.ranking }}</td><td>{{ r.lottery }}</td><td class="num">{{ r.chance }}</td></tr>
-  {% endfor %}
-  </tbody>
+<p class="muted">Kept in this browser only; the server does not remember them. "Show again" recomputes the chances with the same answers.</p>
+<p class="muted" id="results-empty">None in this browser yet.</p>
+<table id="results" hidden>
+  <thead><tr><th>When</th><th>Programs</th><th>Lottery number</th><th class="num">Chance of an offer</th><th></th></tr></thead>
+  <tbody></tbody>
 </table>
-{% endif %}
+<p><button type="button" id="forget-results" class="secondary" hidden>Forget these results</button></p>
 <script>
 (function () {
   // The ranking has one home: nycmsa.ranking, shared with the picker.
@@ -148,6 +143,56 @@
     location.href = '/';
   };
   renderChips();
+
+  // Earlier results live in nycmsa.results, written by the result page.
+  var RESULTS = 'nycmsa.results';
+  function results() { var r = load(RESULTS); return Array.isArray(r) ? r : []; }
+  function showAgain(answers) {
+    // The form's memory follows the result being shown again.
+    var data = {};
+    Object.keys(answers).forEach(function (key) {
+      if (key === 'ranking') return;
+      if (key === 'attributes') data.attribute = Array.isArray(answers[key]) ? answers[key] : [];
+      else if (key === 'talent_test' || key === 'waitlist' || key === 'outlook') data[key] = [answers[key]];
+      else data[key] = answers[key];
+    });
+    save(KEY, data);
+    save(RKEY, String(answers.ranking || '').split(/[\s,]+/).filter(function (c) { return c; }));
+    var f = document.createElement('form');
+    f.method = 'post'; f.action = '/simulate';
+    Object.keys(answers).forEach(function (key) {
+      var name = key === 'attributes' ? 'attribute' : key;
+      var values = Array.isArray(answers[key]) ? answers[key] : [answers[key]];
+      values.forEach(function (v) {
+        var i = document.createElement('input'); i.type = 'hidden'; i.name = name; i.value = v; f.appendChild(i);
+      });
+    });
+    document.body.appendChild(f); f.submit();
+  }
+  function renderResults() {
+    var list = results();
+    var table = document.getElementById('results');
+    var body = table.tBodies[0];
+    body.innerHTML = '';
+    document.getElementById('results-empty').hidden = list.length > 0;
+    table.hidden = list.length === 0;
+    document.getElementById('forget-results').hidden = list.length === 0;
+    list.forEach(function (r) {
+      var tr = document.createElement('tr');
+      [new Date(r.at).toLocaleString(), r.programs, r.lottery, r.chance].forEach(function (text, j) {
+        var td = document.createElement('td'); td.textContent = text; if (j === 3) td.className = 'num'; tr.appendChild(td);
+      });
+      var td = document.createElement('td');
+      var again = document.createElement('button'); again.type = 'button'; again.className = 'secondary'; again.textContent = 'Show again';
+      again.onclick = function () { showAgain(r.answers || {}); };
+      var x = document.createElement('button'); x.type = 'button'; x.className = 'x'; x.title = 'Forget this result'; x.textContent = '×';
+      x.onclick = function () { save(RESULTS, results().filter(function (e) { return e.at !== r.at; })); renderResults(); };
+      td.appendChild(again); td.appendChild(x); tr.appendChild(td);
+      body.appendChild(tr);
+    });
+  }
+  document.getElementById('forget-results').onclick = function () { try { localStorage.removeItem(RESULTS); } catch (e) {} renderResults(); };
+  renderResults();
 })();
 </script>
 {% endblock %}
