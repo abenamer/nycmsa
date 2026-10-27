@@ -41,7 +41,7 @@
   <tbody>
   {% for r in rows %}
     <tr data-lat="{{ r.lat }}" data-lon="{{ r.lon }}">
-      <td>{{ r.school }}<div class="hint">{{ r.program }} · <code>{{ r.code }}</code></div></td>
+      <td>{{ r.school }}<div class="hint">{{ r.program }} · <code>{{ r.code }}</code></div>{% if !r.map_url.is_empty() %}<div class="hint"><a href="{{ r.map_url }}" target="_blank" rel="noopener">{% if r.address.is_empty() %}Map{% else %}{{ r.address }}{% endif %}</a>{% if !r.directions_url.is_empty() %} · <a href="{{ r.directions_url }}" target="_blank" rel="noopener">Directions</a>{% endif %}</div>{% endif %}</td>
       <td data-v="{{ r.district }}">{{ r.district }}</td>
       <td>{{ r.method }}</td>
       <td class="num" data-v="{{ r.seats }}">{{ r.seats }}</td>

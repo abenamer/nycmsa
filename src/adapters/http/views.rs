@@ -5,7 +5,7 @@ use askama::Template;
 
 use crate::adapters::cli::render::{pct0, thousands};
 use crate::domain::{
-    Borough, DistrictCode, ProgramDefinitions, ProgramFocus, ProgramRow, Reach, Report,
+    Borough, DistrictCode, GeoPoint, ProgramDefinitions, ProgramFocus, ProgramRow, Reach, Report,
     ScanRequest, ScanRow, SelectionKind, Student, WaitlistNumbers, TAG_THRESHOLD,
 };
 
@@ -228,6 +228,10 @@ pub struct PickRow {
     /// when the catalog has none.
     pub lat: String,
     pub lon: String,
+    pub address: String,
+    /// Google Maps links carrying only the school's location.
+    pub map_url: String,
+    pub directions_url: String,
 }
 
 #[derive(Template)]
@@ -272,6 +276,9 @@ impl PickerPage {
                     math: ScoreCell::new(scores.and_then(|s| s.math_proficient_pct)),
                     lat: coordinate(p.location.map(|l| l.latitude)),
                     lon: coordinate(p.location.map(|l| l.longitude)),
+                    address: p.address.clone().unwrap_or_default(),
+                    map_url: map_url(p.location, p.address.as_deref()),
+                    directions_url: directions_url(p.location),
                 })
             })
             .collect();
@@ -656,11 +663,42 @@ pub struct ScanRowView {
     pub math: ScoreCell,
     pub lat: String,
     pub lon: String,
+    pub address: String,
+    pub map_url: String,
+    pub directions_url: String,
 }
 
 /// A coordinate as the template prints it, or empty when unknown.
 fn coordinate(value: Option<f64>) -> String {
     value.map(|v| format!("{v:.6}")).unwrap_or_default()
+}
+
+/// A Google Maps link to the school: by coordinates when known, else by
+/// the address text; empty when there is neither. Nothing about the
+/// visitor's home goes into these links.
+fn map_url(location: Option<GeoPoint>, address: Option<&str>) -> String {
+    match (location, address) {
+        (Some(l), _) => format!(
+            "https://www.google.com/maps/search/?api=1&query={:.6}%2C{:.6}",
+            l.latitude, l.longitude
+        ),
+        (None, Some(a)) if !a.trim().is_empty() => format!(
+            "https://www.google.com/maps/search/?api=1&query={}",
+            form_urlencoded::byte_serialize(a.trim().as_bytes()).collect::<String>()
+        ),
+        _ => String::new(),
+    }
+}
+
+/// A Google Maps transit-directions link with the school as destination
+/// and the starting point left for the visitor to fill in.
+fn directions_url(location: Option<GeoPoint>) -> String {
+    location.map_or_else(String::new, |l| {
+        format!(
+            "https://www.google.com/maps/dir/?api=1&destination={:.6}%2C{:.6}&travelmode=transit",
+            l.latitude, l.longitude
+        )
+    })
 }
 
 fn outlook(reach: Reach) -> (&'static str, &'static str, u8) {
@@ -809,6 +847,9 @@ impl ScanPage {
             math: ScoreCell::new(r.scores.and_then(|s| s.math_proficient_pct)),
             lat: coordinate(r.location.map(|l| l.latitude)),
             lon: coordinate(r.location.map(|l| l.longitude)),
+            address: r.address.clone().unwrap_or_default(),
+            map_url: map_url(r.location, r.address.as_deref()),
+            directions_url: directions_url(r.location),
         }
     }
 }

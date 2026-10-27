@@ -198,6 +198,20 @@ sorts by it. The server never sees the address.
 | Code review on pull request 8 | Nine findings, all applied: a wrong coordinate in this table; a geocoder error status now reads as a failed lookup, not "not found"; the picker's filter listener no longer fires on the address box; a reload sorts by distance again; a malformed stored home is ignored; the `0, 0` placeholder is not a location; doc comments on the right structs; the CSV's new columns are appended, not inserted; and why a bad coordinate is `None` rather than an error is stated on the function. |
 | Security review on pull request 8 | No findings. Checked: the geocoder's label and coordinates reach the page only through `textContent`, `value` and arithmetic; the fetch URL encodes the address; the address box has no form name and no form action, so nothing carries it to this server; coordinates are numeric in the templates, JSON and CSV. |
 
+## Local evidence: 2026-10-27 (map and directions links)
+
+Same environment. Each school's street address (from the catalog) now
+shows under its name in the picker and scan tables as a Google Maps
+link by coordinates, with a Directions link that opens Google Maps
+transit directions to the school and leaves the starting point blank.
+The visitor's home never goes into a link. The scan JSON and CSV carry
+`address`.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt`, `clippy -D warnings`, `cargo test --locked` | Passed; the fixture test checks M.S. 442's address; the picker test checks that the links carry the school's coordinates and no `origin` |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+
 ## Remote evidence
 
 | Revision | Run | Outcome |

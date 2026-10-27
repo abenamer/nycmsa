@@ -248,6 +248,7 @@ pub struct ScanRowDto {
     pub math_proficient_pct: Option<f64>,
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
+    pub address: Option<String>,
 }
 
 pub fn parse_attributes<'a>(
@@ -510,6 +511,7 @@ pub fn scan_row_to_dto(row: &ScanRow) -> ScanRowDto {
         math_proficient_pct: row.scores.and_then(|s| s.math_proficient_pct),
         latitude: row.location.map(|l| l.latitude),
         longitude: row.location.map(|l| l.longitude),
+        address: row.address.clone(),
     }
 }
 

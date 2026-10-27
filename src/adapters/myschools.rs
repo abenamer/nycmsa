@@ -60,6 +60,8 @@ struct SchoolDto {
     district: Option<DistrictDto>,
     #[serde(default)]
     address: Option<AddressDto>,
+    #[serde(default)]
+    full_address: Option<String>,
 }
 
 /// The geocoded address; MySchools gives the coordinates as strings.
@@ -73,6 +75,36 @@ struct AddressDto {
 /// unparsable value, or has the `0, 0` placeholder an ungeocoded address
 /// carries. A location is optional data for a cosmetic column, so a bad
 /// value drops the point rather than failing the catalog load.
+/// `500 19 STREET, BROOKLYN, NY 11215` as MySchools prints it becomes
+/// `500 19 Street, Brooklyn, NY 11215`: the state and ZIP keep their case.
+fn address_case(raw: &str) -> String {
+    let parts: Vec<&str> = raw.split(',').map(str::trim).collect();
+    let n = parts.len();
+    parts
+        .iter()
+        .enumerate()
+        .map(|(i, part)| {
+            if i + 1 == n && n > 1 {
+                (*part).to_owned()
+            } else {
+                // Ordinals such as 86TH keep a lowercase suffix.
+                title_case(part)
+                    .split(' ')
+                    .map(|w| {
+                        if w.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                            w.to_lowercase()
+                        } else {
+                            w.to_owned()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn location_of(address: Option<&AddressDto>) -> Option<GeoPoint> {
     let address = address?;
     let latitude: f64 = address.latitude.as_deref()?.trim().parse().ok()?;
@@ -167,6 +199,7 @@ fn catalog_from_entries(
         let school_name = school.school.name;
         let dbn = school.school.dbn.trim().to_uppercase();
         let location = location_of(school.school.address.as_ref());
+        let address = school.school.full_address.as_deref().map(address_case);
         let raw_code = school
             .school
             .district
@@ -218,7 +251,8 @@ fn catalog_from_entries(
                     general.as_ref().and_then(|g| g.all_seats_filled),
                     groups,
                 )
-                .with_location(location),
+                .with_location(location)
+                .with_address(address.clone()),
             );
         }
     }
@@ -572,6 +606,12 @@ mod tests {
             .location
             .expect("geocoded");
         assert!((ms442.latitude - 40.6562).abs() < 0.001, "{ms442:?}");
+        let address = d15_d20
+            .iter()
+            .find(|p| p.dbn == "15K442")
+            .and_then(|p| p.address.as_deref())
+            .expect("M.S. 442 has an address");
+        assert!(address.contains("Brooklyn, NY"), "{address}");
         assert!((ms442.longitude + 73.9826).abs() < 0.001, "{ms442:?}");
         let text = std::fs::read_to_string(&path).expect("reads");
         let documents: Vec<serde_json::Value> = serde_json::from_str(&text).expect("json");
@@ -592,6 +632,19 @@ mod tests {
         assert_eq!(point("forty", "-73.9"), None, "not a number");
         assert_eq!(point("NaN", "-73.9"), None);
         assert_eq!(location_of(None), None);
+    }
+
+    #[test]
+    fn addresses_are_title_cased_except_the_state_and_zip() {
+        assert_eq!(
+            address_case("500 19 STREET, BROOKLYN, NY 11215"),
+            "500 19 Street, Brooklyn, NY 11215"
+        );
+        assert_eq!(address_case("610 HENRY STREET"), "610 Henry Street");
+        assert_eq!(
+            address_case("650 86TH STREET, BROOKLYN, NY 11228"),
+            "650 86th Street, Brooklyn, NY 11228"
+        );
     }
 }
 
