@@ -198,7 +198,8 @@ private package makes the Droplet's image pull fail); and the
 `main` branch (Settings, Environments, production, Deployment branches).
 
 1. In DigitalOcean choose Create, Droplets: region New York, image
-   Ubuntu 24.04 LTS, size Basic, Regular, $6 (1 GB RAM, 25 GB disk).
+   Ubuntu 24.04 LTS or Debian 13, size Basic, Regular, $6 (1 GB RAM,
+   25 GB disk; cloud-init picks Docker's repository for either system).
    The $4 size is too small for PostgreSQL and the app together.
 2. Under Authentication pick your SSH key. Under Advanced Options tick
    "Add Initialization scripts (free)" and paste the contents of
