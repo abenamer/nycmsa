@@ -120,8 +120,13 @@ thread for the list.
 
 ## Remote evidence
 
-None yet. After the first push, record here the GitHub Actions run that
-passed for the pushed commit, with its commit hash and the jobs it ran.
+| Revision | Run | Outcome |
+| --- | --- | --- |
+| adf9f22 (pull request 1, 2026-10-27) | GitHub Actions run 40453826962 (pull request) and 40453821113 (push) | Passed: `docs`, `rust` (fmt, check, clippy, tests, both PostgreSQL integration tests against the `postgres:17` service, `cargo audit`), `docker` (image build and `sim --trials 1000`) |
+
+The two earlier pushes on the same pull request failed in `rust`; the
+local-evidence table above records why and the fix for each. A commit
+that changes only this file is not recorded here.
 
 ## Limits
 
