@@ -63,7 +63,16 @@ async fn home_page_prefills_the_student_file() {
     let html = body_text(response).await;
     assert!(html.contains("value=\"BD\""), "lottery prefix prefilled");
     assert!(html.contains("K187A, K239SC"), "ranking prefilled");
-    assert!(html.contains("No runs yet"));
+    assert!(html.contains("Lives in District 15"), "district chip");
+    assert!(
+        html.contains("value=\"d15\" checked"),
+        "district chip checked from student.json"
+    );
+    assert!(
+        html.contains("value=\"top_quarter\" checked"),
+        "talent chip derived from the 0.10 percentile"
+    );
+    assert!(html.contains("Nothing yet"));
 }
 
 #[tokio::test]
@@ -114,8 +123,10 @@ async fn json_simulate_then_fetch_the_run() {
     let response = app.clone().oneshot(get("/runs/1")).await.expect("response");
     assert_eq!(response.status(), StatusCode::OK);
     let html = body_text(response).await;
-    assert!(html.contains("Run #1"));
+    assert!(html.contains("Result #1"));
     assert!(html.contains("K239SC"));
+    assert!(html.contains("chance of an offer from one of these programs"));
+    assert!(html.contains("3. Waitlists"));
 
     let response = app.oneshot(get("/api/runs")).await.expect("response");
     let list: serde_json::Value = serde_json::from_str(&body_text(response).await).expect("json");
@@ -161,7 +172,7 @@ async fn json_simulate_rejects_too_many_trials() {
 
 #[tokio::test]
 async fn form_simulate_redirects_to_the_run_page() {
-    let form = "ranking=K442S%2CK443M&attributes=d15&lottery_number=BD&talent_test_percentile=&talent_test_sd=&trials=1000&seed=2&demand_sd=0.15&attrition=1&waitlist_numbers=reused";
+    let form = "ranking=K442S%2CK443M&attribute=d15&lottery_number=BD&talent_test=not_taken&waitlist=reused&outlook=as_published";
     let request = Request::builder()
         .method("POST")
         .uri("/simulate")
@@ -181,7 +192,7 @@ async fn form_simulate_redirects_to_the_run_page() {
 
 #[tokio::test]
 async fn form_simulate_shows_validation_errors_on_the_form() {
-    let form = "ranking=K442S&attributes=d15&lottery_number=zz&trials=1000&seed=2&demand_sd=0.15&attrition=1";
+    let form = "ranking=K442S&attribute=d15&lottery_number=zz&talent_test=unknown&waitlist=redrawn&outlook=as_published";
     let request = Request::builder()
         .method("POST")
         .uri("/simulate")
@@ -214,6 +225,19 @@ async fn scan_json_matches_the_python_defaults() {
     assert!(rows.len() > 40, "{}", rows.len());
     assert_eq!(rows[0]["code"], "K448S");
     assert_eq!(rows[0]["reach"], "YES all offered");
+}
+
+#[tokio::test]
+async fn scan_page_accepts_chip_parameters() {
+    let response = app()
+        .oneshot(get("/scan?attr=d15&attr=d20&frl=1&lottery=BD"))
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let html = body_text(response).await;
+    assert!(html.contains("value=\"d15\" checked"));
+    assert!(html.contains("Everyone in your group got in"));
+    assert!(html.contains("K448S"));
 }
 
 #[tokio::test]

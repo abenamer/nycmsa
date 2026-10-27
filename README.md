@@ -10,16 +10,22 @@ The code follows the [REAS](https://github.com/abenamer/reas) engineering
 standard: explicit domain types, ports and adapters, one composition root,
 typed errors, and an OKF documentation bundle in [`docs/`](docs/index.md).
 
-## What you can enter
+## What the web page asks
 
-- The lottery number prefix the DOE gave your child (`BD`, `b03f`, ...).
-  The first two hex characters place the number to 0.4%.
-- Where you expect your child to land on a talent test, as a percentile,
-  with a spread for uncertainty.
-- Eligibility attributes (`d15`, `frl`, `sibling_K442S`, ...) and the
-  ranked list of program codes.
-- Model assumptions: trials, seed, year-to-year demand noise, an attrition
-  multiplier, and whether waitlists redraw the lottery number or reuse it.
+- The first two digits of your lottery number (the first two hex
+  characters place the number to 0.4%).
+- How high your child will place on a screened test: don't know, or a
+  quarter of the field.
+- Which priority facts apply (district, free or reduced-price lunch,
+  sibling, continuing student).
+- The ranked list of program codes.
+- Two assumption chips: whether waitlists draw a new number or keep the
+  old one, and whether to take last year's numbers as published or assume
+  schools reach further down their lists.
+
+The result gives one chance of an offer per program, then walks through
+the stages: the lottery round, screened programs, and waitlists. The JSON
+API and the CLI expose every model input directly.
 
 ## Run
 

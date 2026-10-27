@@ -39,6 +39,20 @@ revision; use its runs as the evidence for committed code.
 | Full ASD-STE100 language review | Not run | See the [STE review](ste-review.md). |
 | Miri, sanitizers | Not applicable | The crate contains no `unsafe` code. |
 
+## Local evidence: 2026-10-27 (parent-friendly form)
+
+Same environment. The web form changed to chips and plain questions; the
+results page gained the stage sections. The checks below ran on the
+working tree before commit.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt --all -- --check` | Passed |
+| `cargo check --workspace --all-targets --locked` | Passed |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed |
+| `cargo test --workspace --locked` | Passed; see the counts in the commit message |
+| `python scripts/check_docs.py` and the checker tests | Passed |
+
 ## Remote evidence
 
 None yet. After the first push, record here the GitHub Actions run that

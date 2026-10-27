@@ -1,83 +1,83 @@
 {% extends "base.html" %}
-{% block title %}Simulate{% endblock %}
+{% block title %}Your chances{% endblock %}
 {% block content %}
-<h1>One student's chances across a ranked list</h1>
-<p class="muted">Monte Carlo over last year's MySchools seats-and-demand figures. Enter what you know or assume: the lottery number prefix the DOE gave your child, and where you expect them to land on a talent test.</p>
+<h1>What are our chances?</h1>
+<p class="muted">Answer a few questions and we replay last year's middle school admissions 200,000 times with your child's number. You get one chance of an offer for each program on your list.</p>
 {% if let Some(message) = error %}<div class="error">{{ message }}</div>{% endif %}
-<form class="grid" method="post" action="/simulate">
-  <div class="wide">
-    <label for="ranking">Ranked program codes, best first</label>
-    <input type="text" id="ranking" name="ranking" value="{{ form.ranking }}" required>
-    <div class="hint">Comma-separated codes from the program list below.</div>
-  </div>
-  <div class="wide">
-    <label for="attributes">Eligibility attributes</label>
-    <input type="text" id="attributes" name="attributes" value="{{ form.attributes }}">
-    <div class="hint">For example <code>d15</code>, <code>d20</code>, <code>frl</code>, <code>sibling_K442S</code>, <code>mark_twain_test</code>. The student falls into the first priority group whose requirements they all satisfy.</div>
-  </div>
-  <div>
-    <label for="lottery_number">Lottery number prefix (hex)</label>
-    <input type="text" id="lottery_number" name="lottery_number" value="{{ form.lottery_number }}" placeholder="e.g. BD or b03f">
-    <div class="hint">First 1–4 characters of the 32-character DOE number. The first two give the percentile to 0.4%. Leave blank to draw at random.</div>
-  </div>
-  <div>
-    <label for="talent_test_percentile">Expected talent-test rank (%)</label>
-    <input type="number" id="talent_test_percentile" name="talent_test_percentile" value="{{ form.talent_test_percentile }}" min="0" max="100" step="any" placeholder="e.g. 10 = top tenth">
-    <div class="hint">0 = best test-taker, 100 = worst. Blank = unknown, drawn uniformly.</div>
-  </div>
-  <div>
-    <label for="talent_test_sd">Talent-test spread (± percentage points)</label>
-    <input type="number" id="talent_test_sd" name="talent_test_sd" value="{{ form.talent_test_sd }}" min="0" max="100" step="any">
-    <div class="hint">Trial-to-trial noise, so the two Mark Twain talent areas correlate without being identical.</div>
-  </div>
-  <div>
-    <label for="waitlist_numbers">Waitlist lottery numbers</label>
-    <select id="waitlist_numbers" name="waitlist_numbers">
-      <option value="redrawn"{% if !form.waitlist_reused %} selected{% endif %}>Redrawn per waitlist (DOE policy)</option>
-      <option value="reused"{% if form.waitlist_reused %} selected{% endif %}>Same number reused (seen in 2022)</option>
-    </select>
-  </div>
-  <div>
-    <label for="trials">Trials</label>
-    <input type="number" id="trials" name="trials" value="{{ form.trials }}" min="1" max="5000000" step="1">
-  </div>
-  <div>
-    <label for="seed">Seed</label>
-    <input type="number" id="seed" name="seed" value="{{ form.seed }}" min="0" step="1">
-  </div>
-  <div>
-    <label for="demand_sd">Demand noise (log-normal sd)</label>
-    <input type="number" id="demand_sd" name="demand_sd" value="{{ form.demand_sd }}" min="0" step="any">
-    <div class="hint">Year-to-year uncertainty on each program's offer rate.</div>
-  </div>
-  <div>
-    <label for="attrition">Attrition multiplier</label>
-    <input type="number" id="attrition" name="attrition" value="{{ form.attrition }}" min="0.01" step="any">
-    <div class="hint">1.0 = published rates. Higher is optimistic.</div>
-  </div>
-  <div><button type="submit">Run simulation</button></div>
+<form method="post" action="/simulate">
+  <fieldset>
+    <legend>What are the first two digits of your lottery number?</legend>
+    <input type="text" name="lottery_number" value="{{ form.lottery_number }}" placeholder="for example BD" maxlength="32" autocomplete="off">
+    <div class="hint">It's on MySchools, a long string of letters and digits. The first two characters are enough. Leave it blank if you don't have it yet.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>How high do you think your child will place on a screened test?</legend>
+    <div class="chips">
+    {% for c in form.talent_chips %}
+      <label class="chip"><input type="radio" name="talent_test" value="{{ c.value }}"{% if c.checked %} checked{% endif %}><span>{{ c.label }}</span></label>
+    {% endfor %}
+    </div>
+    <div class="hint">Only matters for programs that pick students by a test, such as Mark Twain.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Which of these apply to your child?</legend>
+    <div class="chips">
+    {% for c in form.attribute_chips %}
+      <label class="chip"><input type="checkbox" name="attribute" value="{{ c.value }}"{% if c.checked %} checked{% endif %}><span>{{ c.label }}</span></label>
+    {% endfor %}
+    </div>
+    <div class="hint">Schools give priority to some families first. Your child is placed in the first priority group that fits.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Which programs are you ranking, in order?</legend>
+    <input type="text" name="ranking" value="{{ form.ranking }}" required>
+    <div class="hint">Program codes, best first, separated by commas. The codes are in the list below.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>How do waitlists work this year?</legend>
+    <div class="chips">
+    {% for c in form.waitlist_chips %}
+      <label class="chip"><input type="radio" name="waitlist" value="{{ c.value }}"{% if c.checked %} checked{% endif %}><span>{{ c.label }}</span></label>
+    {% endfor %}
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>How much do you trust last year's numbers?</legend>
+    <div class="chips">
+    {% for c in form.outlook_chips %}
+      <label class="chip"><input type="radio" name="outlook" value="{{ c.value }}"{% if c.checked %} checked{% endif %}><span>{{ c.label }}</span></label>
+    {% endfor %}
+    </div>
+  </fieldset>
+
+  <button type="submit">Show our chances</button>
 </form>
 
-<h2>Programs available to rank</h2>
+<h2>Program codes</h2>
 <table>
-  <thead><tr><th>Code</th><th>Program</th><th>MySchools method</th><th>Modelled as</th></tr></thead>
+  <thead><tr><th>Code</th><th>Program</th><th>Picks students by</th></tr></thead>
   <tbody>
   {% for p in programs %}
-    <tr><td><code>{{ p.code }}</code></td><td>{{ p.name }}</td><td>{{ p.method }}</td><td>{{ p.kind }}</td></tr>
+    <tr><td><code>{{ p.code }}</code></td><td>{{ p.name }}</td><td>{{ p.how }}</td></tr>
   {% endfor %}
   </tbody>
 </table>
-<p class="muted">Group-level figures are on the <a href="/programs">programs page</a>.</p>
+<p class="muted">Last year's seats and applicants for each priority group are on the <a href="/programs">numbers page</a>.</p>
 
-<h2>Recent runs</h2>
+<h2>Earlier results</h2>
 {% if recent.is_empty() %}
-<p class="muted">No runs yet.</p>
+<p class="muted">Nothing yet.</p>
 {% else %}
 <table>
-  <thead><tr><th>Run</th><th>When (UTC)</th><th>Ranking</th><th>Lottery</th><th class="num">P(any offer)</th></tr></thead>
+  <thead><tr><th>Result</th><th>When (UTC)</th><th>Programs</th><th>Lottery number</th><th class="num">Chance of an offer</th></tr></thead>
   <tbody>
   {% for r in recent %}
-    <tr><td><a href="/runs/{{ r.id }}">#{{ r.id }}</a></td><td>{{ r.created_at }}</td><td>{{ r.ranking }}</td><td>{{ r.lottery }}</td><td class="num">{{ r.p_any }}</td></tr>
+    <tr><td><a href="/runs/{{ r.id }}">#{{ r.id }}</a></td><td>{{ r.created_at }}</td><td>{{ r.ranking }}</td><td>{{ r.lottery }}</td><td class="num">{{ r.chance }}</td></tr>
   {% endfor %}
   </tbody>
 </table>

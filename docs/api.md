@@ -32,7 +32,7 @@ address is a deployment choice, not an authentication check.
 | `GET /` | Simulate form, program list, recent runs | 200 HTML | |
 | `POST /simulate` | Form submit | 303 to `/runs/{id}` | 422 HTML with the message |
 | `GET /runs/{id}` | Report page | 200 HTML | 404 |
-| `GET /scan` | Scan form and results | 200 HTML | 422 HTML |
+| `GET /scan` | Scan questions and results | 200 HTML | 422 HTML |
 | `GET /programs` | Program definitions | 200 HTML | |
 | `POST /api/simulate` | Run a simulation | 201 JSON run | 422 |
 | `GET /api/runs` | Recent runs | 200 JSON array | |
@@ -103,14 +103,25 @@ The response is the run:
 
 ### Form fields of `POST /simulate`
 
-The HTML form takes percentages where the JSON API takes fractions:
-`talent_test_percentile` and `talent_test_sd` are percent values, so `10`
-means `0.10`.
+The HTML form asks plain questions and maps the answers to model inputs.
+The JSON API exposes the inputs directly.
+
+| Field | Values | Model input |
+| --- | --- | --- |
+| `lottery_number` | Hex prefix or blank | `student.lottery_number`; blank means unknown |
+| `talent_test` | `not_taken`, `unknown`, `top_quarter`, `second_quarter`, `third_quarter`, `bottom_quarter` | `not_taken` removes `mark_twain_test`; the quarters set the percentile to 0.125, 0.375, 0.625, 0.875 with spread 0.10; `unknown` draws it |
+| `attribute` (repeated) | Any attribute a program group requires, except `mark_twain_test` | `student.attributes` |
+| `ranking` | Comma-separated codes | `student.ranking` |
+| `waitlist` | `redrawn`, `reused` | `parameters.waitlist_numbers` |
+| `outlook` | `as_published`, `hopeful` | `parameters.attrition` 1.0 or 1.3 |
+
+The form fixes `trials` at 200,000, `seed` at 0, and `demand_sd` at 0.15.
 
 ### `GET /api/scan`
 
-Query parameters: `attrs` (comma-separated, default `d15,d20`), `frl`
-(`1`, `true`, `on`, or `yes`), `lottery` (hex prefix, default `BD`). The
+Query parameters: `attrs` (comma-separated) or repeated `attr` keys, `frl`
+(`1`, `true`, `on`, or `yes`), `lottery` (hex prefix). With no query
+string the defaults are `d15,d20`, not FRL, and `BD`. The
 response lists the attributes, the FRL flag, the lottery prefix and
 fraction, and the rows in reach order. The CSV has the same columns as the
 Python scanner.

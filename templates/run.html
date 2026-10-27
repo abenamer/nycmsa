@@ -1,40 +1,73 @@
 {% extends "base.html" %}
-{% block title %}Run #{{ id }}{% endblock %}
+{% block title %}Result #{{ id }}{% endblock %}
 {% block content %}
-<h1>Run #{{ id }}</h1>
-<p class="muted">{{ created_at }} · {{ parameters_line }} · <a href="/api/runs/{{ id }}">JSON</a></p>
-<p>Student attributes: <code>{{ attributes }}</code></p>
-{% if let Some(line) = lottery_line %}<p>{{ line }}</p>{% endif %}
-{% if let Some(line) = talent_line %}<p>{{ line }}</p>{% endif %}
+<h1>Your chances</h1>
+<p class="lead">{{ headline }}</p>
+<p>{{ no_offer_line }}</p>
+{% if let Some(line) = first_offer_line %}<p>{{ line }}</p>{% endif %}
 
-<table>
-  <thead>
-    <tr><th class="num">#</th><th>Code</th><th>Program</th><th>Your priority group</th><th>Modelled as</th><th class="num">Init%</th><th class="num">WL%</th><th class="num">P(initial)</th><th class="num">P(waitlist)</th><th class="num">P(any)</th></tr>
-  </thead>
-  <tbody>
-  {% for r in rows %}
-    <tr>
-      <td class="num">{{ r.rank }}</td>
-      <td><code>{{ r.code }}</code></td>
-      <td>{{ r.name }}</td>
-      <td>{% if let Some(g) = r.group %}{{ g }}{% else %}<em class="muted">not eligible</em>{% endif %}</td>
-      <td>{{ r.selection }}</td>
-      <td class="num">{{ r.init_rate }}</td>
-      <td class="num">{{ r.wl_rate }}</td>
-      <td class="num">{{ r.p_initial }}</td>
-      <td class="num">{{ r.p_waitlist }}</td>
-      <td class="num">{{ r.p_any }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-<p class="hint">Init% = share of your group matched in the initial round last year. WL% = share of the remaining group reached by the waitlist. P(waitlist) counts only programs ranked above the initial match.</p>
-
-<h2>Summary</h2>
-<dl class="summary">
-{% for line in summary %}
-  <dt>{{ line.label }}</dt><dd>{{ line.value }}</dd>
+<h2>Chance of an offer, program by program</h2>
+{% for p in programs %}
+<div class="program">
+  <div class="muted">{{ p.rank }}.</div>
+  <div>
+    <div class="name">{{ p.name }} <span class="muted">({{ p.code }})</span></div>
+    <div class="sub">{% if let Some(g) = p.group %}Considered as: {{ g }}{% else %}Not eligible{% endif %}{% if let Some(n) = p.note %} · {{ n }}{% endif %}</div>
+  </div>
+  <div class="bar"><i style="width: {{ p.bar }}%"></i></div>
+  <div class="pct">{{ p.chance }}</div>
+  <div><span class="badge {{ p.verdict_class }}">{{ p.verdict }}</span></div>
+</div>
 {% endfor %}
-</dl>
-<p><a href="/">Run another</a></p>
+<p class="hint">Each figure is the chance of an offer from that program at any point, first round or waitlist. The chances add up to more than the total above because a child can hold a seat and still get waitlist offers from programs ranked higher.</p>
+
+<h2>How it plays out</h2>
+<p class="muted">Admissions happen in stages. Here is how your list does at each one.</p>
+
+<h2>1. The lottery round</h2>
+{% if lottery_rows.is_empty() %}
+<p class="muted">None of the programs on your list picks students by lottery number.</p>
+{% else %}
+<p>Programs that pick by lottery number. The chance that your child's number clears the program's cutoff in the first round:</p>
+{% for r in lottery_rows %}
+<div class="stage">
+  <div>{{ r.name }} <span class="muted">({{ r.code }})</span><div class="hint">{{ r.last_year }}</div></div>
+  <div class="bar"><i style="width: {{ r.bar }}%"></i></div>
+  <div class="pct">{{ r.chance }}</div>
+</div>
+{% endfor %}
+{% endif %}
+
+<h2>2. Screened programs</h2>
+{% if screened_rows.is_empty() %}
+<p class="muted">None of the programs on your list picks students by a screened test.</p>
+{% else %}
+<p>Programs that rank by test result instead of lottery number. The chance of a first-round offer, given where you expect your child to place:</p>
+{% for r in screened_rows %}
+<div class="stage">
+  <div>{{ r.name }} <span class="muted">({{ r.code }})</span><div class="hint">{{ r.last_year }}</div></div>
+  <div class="bar"><i style="width: {{ r.bar }}%"></i></div>
+  <div class="pct">{{ r.chance }}</div>
+</div>
+{% endfor %}
+{% endif %}
+
+<h2>3. Waitlists</h2>
+<p>After the first round, your child is automatically waitlisted at every program ranked above the one they got. {{ waitlist_rule }} The chance of a waitlist offer from each program:</p>
+{% for r in waitlist_rows %}
+<div class="stage">
+  <div>{{ r.name }} <span class="muted">({{ r.code }})</span><div class="hint">{{ r.last_year }}</div></div>
+  <div class="bar"><i style="width: {{ r.bar }}%"></i></div>
+  <div class="pct">{{ r.chance }}</div>
+</div>
+{% endfor %}
+<p class="hint">A waitlist chance is zero when the program is ranked below where your child usually lands, because nobody is waitlisted for a program they ranked lower than their offer.</p>
+
+<h2>What we assumed</h2>
+<ul class="plain">
+{% for a in assumptions %}
+  <li>{{ a }}</li>
+{% endfor %}
+</ul>
+<p class="muted">Result #{{ id }}, {{ created_at }}. <a href="/">Try different answers</a> · <a href="/api/runs/{{ id }}">All the numbers (JSON)</a></p>
 {% endblock %}

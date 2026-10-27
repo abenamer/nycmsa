@@ -1,16 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Programs{% endblock %}
+{% block title %}Last year's numbers{% endblock %}
 {% block content %}
-<h1>Program definitions</h1>
-<p class="muted">Last year's seats and demand per priority group, from MySchools. A student falls into the first group whose requirements they satisfy. Groups whose figures were cut off in the screenshots are estimates. <a href="/api/programs">JSON</a></p>
+<h1>Last year's numbers</h1>
+<p class="muted">Seats and demand for each priority group, from MySchools. A child is placed in the first group that fits. Figures that were cut off in the screenshots are estimates. <a href="/api/programs">JSON</a></p>
 {% for p in programs %}
-<h2><code>{{ p.code }}</code> {{ p.name }} <span class="muted">· {{ p.method }} · modelled as {{ p.kind }} · {{ p.seats }} seats, {{ p.applicants }} applicants</span></h2>
+<h2>{{ p.name }} <span class="muted">· {{ p.code }} · {{ p.method }} · picks by {{ p.how }} · {{ p.seats }} seats, {{ p.applicants }} applicants</span></h2>
 {% if let Some(note) = p.note %}<p class="hint">{{ note }}</p>{% endif %}
 <table>
-  <thead><tr><th>Priority group</th><th>Requires</th><th class="num">Applicants</th><th class="num">Offers (incl. waitlist)</th><th class="num">Initial offers</th></tr></thead>
+  <thead><tr><th>Priority group</th><th>Who</th><th class="num">Applied</th><th class="num">Got offers (incl. waitlist)</th><th class="num">First-round offers</th></tr></thead>
   <tbody>
   {% for g in p.groups %}
-    <tr><td>{{ g.name }}</td><td><code>{{ g.requires }}</code></td><td class="num">{{ g.applicants }}</td><td class="num">{{ g.offers }}</td><td class="num">{{ g.initial_offers }}</td></tr>
+    <tr><td>{{ g.name }}</td><td>{{ g.requires }}</td><td class="num">{{ g.applicants }}</td><td class="num">{{ g.offers }}</td><td class="num">{{ g.initial_offers }}</td></tr>
   {% endfor %}
   </tbody>
 </table>

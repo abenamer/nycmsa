@@ -3,50 +3,63 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}NYC MS admissions{% endblock %} · nycmsa</title>
+<title>{% block title %}NYC middle school chances{% endblock %} · nycmsa</title>
 <style>
   :root { --ink: #1b1f24; --muted: #5c6670; --line: #d9dee3; --accent: #0b5fff; --bg: #fff; --soft: #f4f6f8; }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: var(--ink); background: var(--bg); }
+  body { margin: 0; font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: var(--ink); background: var(--bg); }
   header { border-bottom: 1px solid var(--line); background: var(--soft); }
-  header .wrap { display: flex; gap: 1.2rem; align-items: baseline; padding: .8rem 1rem; }
+  header .wrap { display: flex; gap: 1.2rem; align-items: baseline; padding: .8rem 1rem; max-width: 1100px; margin: 0 auto; }
   header a { color: var(--ink); text-decoration: none; }
   header a.brand { font-weight: 700; }
   header nav a { color: var(--muted); margin-right: 1rem; }
-  main { max-width: 1180px; margin: 0 auto; padding: 1rem; }
-  h1 { font-size: 1.4rem; margin: .4rem 0 .8rem; }
-  h2 { font-size: 1.1rem; margin: 1.4rem 0 .5rem; }
+  main { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+  h1 { font-size: 1.5rem; margin: .4rem 0 .6rem; }
+  h2 { font-size: 1.15rem; margin: 1.6rem 0 .5rem; }
   p.muted, .muted { color: var(--muted); }
-  form.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .8rem 1rem; align-items: end; }
-  form.grid .wide { grid-column: 1 / -1; }
-  label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: .2rem; }
-  input[type=text], input[type=number], select { width: 100%; padding: .45rem .5rem; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
-  button { padding: .55rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
-  table { border-collapse: collapse; width: 100%; margin: .6rem 0 1rem; font-size: .92rem; }
-  th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .lead { font-size: 1.25rem; margin: .2rem 0 .6rem; }
+  fieldset { border: 0; padding: 0; margin: 0 0 1.2rem; }
+  legend { font-weight: 600; padding: 0; margin-bottom: .35rem; }
+  .hint { font-size: .85rem; color: var(--muted); margin-top: .2rem; }
+  input[type=text] { width: 100%; max-width: 32rem; padding: .55rem .6rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+  .chips { display: flex; flex-wrap: wrap; gap: .45rem; }
+  .chip { position: relative; }
+  .chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .chip span { display: inline-block; padding: .4rem .85rem; border: 1px solid var(--line); border-radius: 999px; background: #fff; cursor: pointer; user-select: none; }
+  .chip input:checked + span { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip input:focus-visible + span { outline: 3px solid #9ec0ff; outline-offset: 1px; }
+  button { padding: .65rem 1.2rem; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  table { border-collapse: collapse; width: 100%; margin: .6rem 0 1rem; font-size: .95rem; }
+  th, td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { background: var(--soft); font-weight: 600; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .error { background: #fff1f0; border: 1px solid #ffa39e; color: #a8071a; padding: .6rem .8rem; border-radius: 6px; margin: .6rem 0; }
-  .badge { display: inline-block; padding: .1rem .45rem; border-radius: 999px; font-size: .8rem; white-space: nowrap; }
+  .error { background: #fff1f0; border: 1px solid #ffa39e; color: #a8071a; padding: .6rem .8rem; border-radius: 8px; margin: .6rem 0; }
+  .badge { display: inline-block; padding: .12rem .55rem; border-radius: 999px; font-size: .82rem; white-space: nowrap; }
   .badge.good { background: #e6f7ec; color: #0a6b2e; }
   .badge.likely { background: #e8f1ff; color: #0b3d91; }
   .badge.maybe { background: #fff7e0; color: #8a5a00; }
   .badge.no { background: #fdeceb; color: #8d1d1d; }
   .badge.neutral { background: var(--soft); color: var(--muted); }
+  .bar { height: .5rem; background: var(--soft); border-radius: 999px; overflow: hidden; min-width: 7rem; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .program { display: grid; grid-template-columns: 2.2rem 1fr 7rem 4.5rem auto; gap: .4rem .8rem; align-items: center; padding: .6rem 0; border-bottom: 1px solid var(--line); }
+  .program .name { font-weight: 600; }
+  .program .sub { font-size: .85rem; color: var(--muted); }
+  .program .pct { font-size: 1.15rem; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+  .stage { padding: .35rem 0; display: grid; grid-template-columns: 1fr 7rem 4.5rem; gap: .5rem; align-items: center; border-bottom: 1px solid var(--line); }
+  .stage .pct { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+  ul.plain { padding-left: 1.2rem; }
   code { background: var(--soft); padding: .05rem .3rem; border-radius: 4px; }
-  dl.summary { display: grid; grid-template-columns: max-content max-content; gap: .3rem 1.2rem; }
-  dl.summary dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .hint { font-size: .8rem; color: var(--muted); margin-top: .15rem; }
+  @media (max-width: 640px) { .program { grid-template-columns: 2rem 1fr 4.5rem; } .program .bar, .program .badge { display: none; } .stage { grid-template-columns: 1fr 4.5rem; } .stage .bar { display: none; } }
 </style>
 </head>
 <body>
 <header><div class="wrap">
   <a class="brand" href="/">nycmsa</a>
   <nav>
-    <a href="/">Simulate</a>
-    <a href="/scan">Scan catalog</a>
-    <a href="/programs">Programs</a>
-    <a href="/api/runs">API</a>
+    <a href="/">Your chances</a>
+    <a href="/scan">Which schools?</a>
+    <a href="/programs">Last year's numbers</a>
   </nav>
 </div></header>
 <main>
