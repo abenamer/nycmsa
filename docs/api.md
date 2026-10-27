@@ -9,11 +9,11 @@ tags: [api, http, cli]
 
 ## Access
 
-Every endpoint is anonymous. The server is a local analysis tool: it
-holds no personal data beyond what the operator enters, and it binds to
-`127.0.0.1:8080` unless `--bind` says otherwise. Do not expose it to the
-public internet without an authenticating reverse proxy. A loopback
-address is a deployment choice, not an authentication check.
+Every endpoint is anonymous and meant to be public: the deployment in
+`deploy/` serves the app to everyone behind Caddy. The server binds to
+`127.0.0.1:8080` unless `--bind` says otherwise. Anything a visitor
+submits is visible to every other visitor through the runs endpoints, so
+the form asks only for a two-letter lottery prefix and program codes.
 
 ## Limits
 

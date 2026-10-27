@@ -51,22 +51,29 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t nycmsa:ci .
       - run: docker run --rm nycmsa:ci sim --trials 1000 --seed 1
-      # Publish the tested image on every merge to main. The server in
-      # deploy/compose.yaml pulls :latest; :sha-<commit> pins a build.
-      - name: Push the image to GitHub Container Registry
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          IMAGE: ghcr.io/${{ github.repository }}
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          docker tag nycmsa:ci "$IMAGE:latest"
-          docker tag nycmsa:ci "$IMAGE:sha-${GITHUB_SHA::7}"
-          docker push "$IMAGE:latest"
-          docker push "$IMAGE:sha-${GITHUB_SHA::7}"
+
+  # Publishes the image the server pulls. It runs only for a push to main
+  # and only after every other job passed. The `production` environment
+  # is the second gate: its deployment-branch policy in the repository
+  # settings must allow `main` only, so a workflow edit on another branch
+  # cannot reach the write token. The build job above never holds that
+  # token.
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [docs, rust, docker]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t "$IMAGE:latest" -t "$IMAGE:sha-${GITHUB_SHA::7}" .
+      - run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - run: docker push --all-tags "$IMAGE"

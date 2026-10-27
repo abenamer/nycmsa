@@ -83,8 +83,9 @@ keep every snapshot and run.
 Do not run `docker compose down -v` against data you must keep. The `-v`
 flag deletes the named volume. A volume is not a backup.
 
-The Compose file publishes port 8080 on loopback only. To reach the app
-from other machines, put an authenticating reverse proxy in front of it.
+The local Compose file publishes port 8080 on loopback only. The
+deployment below puts Caddy in front and serves the app to everyone,
+which is its purpose: every page is public and anonymous.
 
 ## Back up the database
 
@@ -185,10 +186,12 @@ Ubuntu Droplet into a running server without logging in. CI pushes the
 image to `ghcr.io/abenamer/nycmsa` on every merge to `main` (job
 `docker`, step "Push the image"), so the server never compiles anything.
 
-Prerequisites: a DigitalOcean account with an SSH key added, and the
+Prerequisites: a DigitalOcean account with an SSH key added; the
 container image public under the repository owner's packages (check at
 `https://github.com/abenamer?tab=packages` after the first merge; a
-private package makes the Droplet's image pull fail).
+private package makes the Droplet's image pull fail); and the
+`production` environment in the repository settings restricted to the
+`main` branch (Settings, Environments, production, Deployment branches).
 
 1. In DigitalOcean choose Create, Droplets: region New York, image
    Ubuntu 24.04 LTS, size Basic, Regular, $6 (1 GB RAM, 25 GB disk).
@@ -213,9 +216,13 @@ Docker from Docker's own repository; a 1 GB swap file; unattended
 security updates with a reboot at 05:30 UTC when one is needed; the files
 in `/opt/nycmsa` with a random database password in `.env`; a daily
 `pg_dump` at 03:10 UTC into `/opt/nycmsa/backups` (newest 14 kept); and a
-daily pull of the newest image at 04:17 UTC that restarts the app only
-when the image changed (`update.sh`). Run `/opt/nycmsa/update.sh` by hand
-to deploy a merge at once.
+daily update at 04:17 UTC (`update.sh`) that refreshes the deployment
+files from `main`, pulls the newest image, and restarts only what
+changed; `.env` is never touched. Run `/opt/nycmsa/update.sh` by hand to
+deploy a merge at once. The image comes from the `publish` CI job, which
+runs only for `main` after the other jobs pass and under the
+`production` environment: once, in the repository settings, set that
+environment's deployment branches to `main` only.
 
 Recovery: if the page does not answer after fifteen minutes, read the
 cloud-init log. An image pull error means the package is private (see
