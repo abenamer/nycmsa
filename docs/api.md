@@ -129,8 +129,8 @@ string the JSON endpoint uses the Python scanner's defaults, `d15,d20`,
 not FRL, and `BD`; the HTML page shows blank questions instead. The
 response lists the attributes, the FRL flag, the lottery prefix and
 fraction, and the rows in reach order. Each row also carries the school's
-`dbn`, `latitude`, `longitude`, `scores_year`, `ela_proficient_pct`, and
-`math_proficient_pct`.
+`dbn`, `scores_year`, `ela_proficient_pct`, `math_proficient_pct`,
+`latitude`, and `longitude`.
 The CSV has the Python scanner's columns followed by those six.
 
 ## Command line

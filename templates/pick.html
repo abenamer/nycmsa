@@ -129,7 +129,7 @@
     document.querySelectorAll('input[name="picks"]').forEach(function (i) { i.checked = i.value === (filters.picks || 'any'); });
     document.getElementById('search').value = filters.q || '';
   }
-  document.querySelectorAll('.picker-main input').forEach(function (i) { i.addEventListener('input', applyFilters); i.addEventListener('change', applyFilters); });
+  document.querySelectorAll('.picker-main fieldset input').forEach(function (i) { i.addEventListener('input', applyFilters); i.addEventListener('change', applyFilters); });
   document.querySelectorAll('button.code').forEach(function (b) {
     b.onclick = function () { var c = b.dataset.code; if (chosen.indexOf(c) < 0) { chosen.push(c); update(); } };
   });

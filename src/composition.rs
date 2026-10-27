@@ -308,8 +308,14 @@ pub async fn run_serve(args: &ServeArgs) -> Result<(), AppError> {
     tracing::info!(
         programs = programs.len(),
         catalog_programs = catalog.len(),
+        located = catalog.iter().filter(|p| p.location.is_some()).count(),
         "built the simulation programs"
     );
+    if catalog.iter().any(|p| p.location.is_none()) {
+        tracing::warn!(
+            "some catalog programs have no usable coordinates; their distance column stays blank"
+        );
+    }
     serve_with(
         args,
         programs,

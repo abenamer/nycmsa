@@ -273,7 +273,7 @@ async fn scan_csv_has_the_python_columns() {
         Some("text/csv; charset=utf-8")
     );
     let csv = body_text(response).await;
-    assert!(csv.starts_with("district,school,code,program,method,seats,applicants,filled,group,group_order,n_groups,your_group_applied,your_group_offered,your_group_share,reach,dbn,latitude,longitude,scores_year,ela_proficient_pct,math_proficient_pct\n"));
+    assert!(csv.starts_with("district,school,code,program,method,seats,applicants,filled,group,group_order,n_groups,your_group_applied,your_group_offered,your_group_share,reach,dbn,scores_year,ela_proficient_pct,math_proficient_pct,latitude,longitude\n"));
 }
 
 #[tokio::test]

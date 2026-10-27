@@ -13,7 +13,11 @@
   var KEY = 'nycmsa.home';
   var form = document.getElementById('home-form'), input = document.getElementById('home-address');
   var status = document.getElementById('home-status'), forget = document.getElementById('home-forget');
-  function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } }
+  function load() {
+    var h; try { h = JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; }
+    if (!h || typeof h.label !== 'string' || !isFinite(h.lat) || !isFinite(h.lon)) return null;
+    return h;
+  }
   function save(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch (e) {} }
   function miles(lat1, lon1, lat2, lon2) {
     var R = 3958.8, rad = Math.PI / 180, dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
@@ -41,7 +45,7 @@
     var q = input.value.trim(); if (!q) return;
     status.textContent = 'Looking up the address…';
     fetch('https://geosearch.planninglabs.nyc/v2/search?size=1&text=' + encodeURIComponent(q))
-      .then(function (r) { return r.json(); })
+      .then(function (r) { if (!r.ok) { throw new Error('status ' + r.status); } return r.json(); })
       .then(function (j) {
         var f = j.features && j.features[0];
         if (!f || !f.geometry) { status.textContent = 'Address not found. Add the borough or ZIP code and try again.'; return; }
@@ -51,6 +55,6 @@
       .catch(function () { status.textContent = 'The address lookup did not answer. Try again later.'; });
   });
   forget.onclick = function () { try { localStorage.removeItem(KEY); } catch (e) {} input.value = ''; fill(null); };
-  document.addEventListener('DOMContentLoaded', function () { fill(load()); });
+  document.addEventListener('DOMContentLoaded', function () { var home = load(); fill(home); if (home) { sortByDistance(); } });
 })();
 </script>

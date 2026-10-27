@@ -69,11 +69,18 @@ struct AddressDto {
     longitude: Option<String>,
 }
 
+/// The school's coordinates, or `None` when the catalog has none, has an
+/// unparsable value, or has the `0, 0` placeholder an ungeocoded address
+/// carries. A location is optional data for a cosmetic column, so a bad
+/// value drops the point rather than failing the catalog load.
 fn location_of(address: Option<&AddressDto>) -> Option<GeoPoint> {
     let address = address?;
     let latitude: f64 = address.latitude.as_deref()?.trim().parse().ok()?;
     let longitude: f64 = address.longitude.as_deref()?.trim().parse().ok()?;
     if !(-90.0..=90.0).contains(&latitude) || !(-180.0..=180.0).contains(&longitude) {
+        return None;
+    }
+    if latitude == 0.0 && longitude == 0.0 {
         return None;
     }
     Some(GeoPoint {
@@ -569,6 +576,22 @@ mod tests {
         let text = std::fs::read_to_string(&path).expect("reads");
         let documents: Vec<serde_json::Value> = serde_json::from_str(&text).expect("json");
         assert_eq!(catalog_from_documents(&documents).expect("parses"), d15_d20);
+    }
+
+    #[test]
+    fn a_location_needs_two_real_coordinates() {
+        let point = |lat: &str, lon: &str| {
+            location_of(Some(&AddressDto {
+                latitude: Some(lat.to_owned()),
+                longitude: Some(lon.to_owned()),
+            }))
+        };
+        assert!(point("40.6562", "-73.982625").is_some());
+        assert_eq!(point("0", "0"), None, "the ungeocoded placeholder");
+        assert_eq!(point("91", "-73.9"), None, "out of range");
+        assert_eq!(point("forty", "-73.9"), None, "not a number");
+        assert_eq!(point("NaN", "-73.9"), None);
+        assert_eq!(location_of(None), None);
     }
 }
 

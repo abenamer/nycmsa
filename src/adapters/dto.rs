@@ -243,11 +243,11 @@ pub struct ScanRowDto {
     pub your_group_share: Option<f64>,
     pub reach: String,
     pub dbn: String,
-    pub latitude: Option<f64>,
-    pub longitude: Option<f64>,
     pub scores_year: Option<u32>,
     pub ela_proficient_pct: Option<f64>,
     pub math_proficient_pct: Option<f64>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
 }
 
 pub fn parse_attributes<'a>(
@@ -505,11 +505,11 @@ pub fn scan_row_to_dto(row: &ScanRow) -> ScanRowDto {
         your_group_share: row.group_share,
         reach: row.reach.label().to_owned(),
         dbn: row.dbn.clone(),
-        latitude: row.location.map(|l| l.latitude),
-        longitude: row.location.map(|l| l.longitude),
         scores_year: row.scores.map(|s| s.year),
         ela_proficient_pct: row.scores.and_then(|s| s.ela_proficient_pct),
         math_proficient_pct: row.scores.and_then(|s| s.math_proficient_pct),
+        latitude: row.location.map(|l| l.latitude),
+        longitude: row.location.map(|l| l.longitude),
     }
 }
 

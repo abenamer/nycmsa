@@ -273,7 +273,6 @@ pub fn combine_subjects(ela: &SubjectResults, math: &SubjectResults) -> TestResu
         .collect()
 }
 
-/// A program as listed in the MySchools catalog.
 /// A point on the map, WGS 84 degrees, as the DOE's geocoder reports a
 /// school's address.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -282,6 +281,7 @@ pub struct GeoPoint {
     pub longitude: f64,
 }
 
+/// A program as listed in the MySchools catalog.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CatalogProgram {
     pub district: DistrictCode,

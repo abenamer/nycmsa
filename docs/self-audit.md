@@ -174,10 +174,12 @@ sorts by it. The server never sees the address.
 
 | Check | Outcome |
 | --- | --- |
-| `cargo fmt`, `clippy -D warnings`, `cargo test --locked` | Passed; the fixture test checks that every fixture school is geocoded and that M.S. 442 sits at 40.68, -74.00 |
+| `cargo fmt`, `clippy -D warnings`, `cargo test --locked` | Passed; the fixture test checks that every fixture school is geocoded and that M.S. 442 sits at 40.6562, -73.9826; a unit test rejects the `0, 0` placeholder, out-of-range and non-numeric values |
 | `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
 | GeoSearch from this environment | Not reachable: the environment's network policy denies `geosearch.planninglabs.nyc`. The browser calls it directly, so the first real use in a browser is the test of that call; the page shows a message when the lookup fails or finds nothing. |
-| Browser check with Playwright (Chromium) | Passed with a stubbed geocoder response: typing an address fills the Distance column, sorts the picker ascending, survives a reload from `nycmsa.home`, and "Forget" clears it. |
+| Browser check with Playwright (Chromium) | Passed with a stubbed geocoder response: typing an address fills the Distance column, sorts the picker ascending, survives a reload from `nycmsa.home` (sorted again), and "Forget" clears it. |
+| Code review on pull request 8 | Nine findings, all applied: a wrong coordinate in this table; a geocoder error status now reads as a failed lookup, not "not found"; the picker's filter listener no longer fires on the address box; a reload sorts by distance again; a malformed stored home is ignored; the `0, 0` placeholder is not a location; doc comments on the right structs; the CSV's new columns are appended, not inserted; and why a bad coordinate is `None` rather than an error is stated on the function. |
+| Security review on pull request 8 | No findings. Checked: the geocoder's label and coordinates reach the page only through `textContent`, `value` and arithmetic; the fetch URL encodes the address; the address box has no form name and no form action, so nothing carries it to this server; coordinates are numeric in the templates, JSON and CSV. |
 
 ## Remote evidence
 
