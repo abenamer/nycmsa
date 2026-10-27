@@ -77,3 +77,31 @@ jobs:
       - run: docker build -t "$IMAGE:latest" -t "$IMAGE:sha-${GITHUB_SHA::7}" .
       - run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
       - run: docker push --all-tags "$IMAGE"
+
+  # Runs update.sh on the server over SSH once the image is published. The
+  # key is accepted only for `sudo /opt/nycmsa/update.sh` (see
+  # deploy/add-deploy-key.sh). Without the DEPLOY_HOST secret the job
+  # reports that and passes; the server then updates itself at 04:17 UTC.
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [publish]
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: {}
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+    steps:
+      - name: Explain a skipped deploy
+        if: env.DEPLOY_HOST == ''
+        run: echo "No DEPLOY_HOST secret in the production environment; the server pulls the image itself at 04:17 UTC."
+      - name: Run update.sh on the server
+        if: env.DEPLOY_HOST != ''
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 "deploy@$DEPLOY_HOST"

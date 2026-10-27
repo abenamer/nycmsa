@@ -185,10 +185,11 @@ previous set stays in the database.
 ## Deploy to a DigitalOcean Droplet
 
 The `deploy/` directory holds a production Compose file that runs the
-prebuilt image behind Caddy, and a cloud-init file that turns a fresh
-Ubuntu Droplet into a running server without logging in. CI pushes the
-image to `ghcr.io/abenamer/nycmsa` on every merge to `main` (the
-`publish` job), so the server never compiles anything.
+prebuilt image behind Caddy, a cloud-init file that turns a fresh Ubuntu
+or Debian Droplet into a running server without logging in, and a script
+that lets CI deploy on merge. CI pushes the image to
+`ghcr.io/abenamer/nycmsa` on every merge to `main` (the `publish` job),
+so the server never compiles anything.
 
 Prerequisites: a DigitalOcean account with an SSH key added; the
 container image public under the repository owner's packages (check at
@@ -224,10 +225,54 @@ in `/opt/nycmsa` with a random database password in `.env`; a daily
 daily update at 04:17 UTC (`update.sh`) that refreshes the deployment
 files from `main`, pulls the newest image, and restarts only what
 changed; `.env` is never touched. Run `/opt/nycmsa/update.sh` by hand to
-deploy a merge at once. The image comes from the `publish` CI job, which
-runs only for `main` after the other jobs pass and under the
-`production` environment: once, in the repository settings, set that
-environment's deployment branches to `main` only.
+deploy a merge at once, or set up the deploy-on-merge job below so CI does
+it. The image comes from the `publish` CI job, which runs only for `main`
+after the other jobs pass and under the `production` environment: once,
+in the repository settings, set that environment's deployment branches
+to `main` only.
+
+### Deploy on merge
+
+The `deploy` CI job runs after `publish` and calls `update.sh` on the
+server over SSH, so a merge is live about five minutes later instead of
+the next morning. It needs a key pair made for this purpose and three
+secrets in the `production` environment. Without the secrets the job
+prints that it was skipped and passes.
+
+The key is accepted by the server for exactly one action. The
+`add-deploy-key.sh` script creates a `deploy` user whose
+`authorized_keys` entry carries `restrict` (no port forwarding, no
+agent, no terminal) and `command="sudo -n /opt/nycmsa/update.sh"`, and a
+sudoers rule that allows that one script and nothing else. Whatever
+command the client asks for, the server runs `update.sh`. The host key is
+pinned in the workflow through the `DEPLOY_KNOWN_HOSTS` secret, so a
+redirected connection fails instead of handing the key to another host.
+
+1. On your own machine make the key pair; the private half never goes
+   on the server:
+   `ssh-keygen -t ed25519 -f nycmsa-deploy -N "" -C github-actions-deploy`.
+2. On the server, register the public half (the script is in
+   `/opt/nycmsa` after the next daily update; fetch it from `main` first
+   if it is not there yet):
+   `ssh root@<droplet IP> /opt/nycmsa/add-deploy-key.sh "'$(cat nycmsa-deploy.pub)'"`.
+   It prints the values for the next step.
+3. In the repository: Settings, Environments, production, Environment
+   secrets. Add `DEPLOY_HOST` (the IP or DNS name), `DEPLOY_KNOWN_HOSTS`
+   (the line the script printed), and `DEPLOY_SSH_KEY` (the whole
+   contents of the private file `nycmsa-deploy`). Then delete the private
+   file or keep it somewhere safe; GitHub does not show it again.
+4. Merge something. The `deploy` job in the run on `main` shows
+   `update.sh`'s output: a `refreshed` or `updated app image` line when
+   something changed, nothing when the server was already current.
+
+Expected result: within a few minutes of the merge the site serves the
+new build, and `docker image ls ghcr.io/abenamer/nycmsa` on the server
+shows the new `sha-` tag.
+
+To rotate the key, repeat steps 1 to 3; the script replaces the
+`authorized_keys` entry. To remove deploy-on-merge, delete the three
+secrets, then on the server run `userdel -r deploy` and
+`rm /etc/sudoers.d/nycmsa-deploy`.
 
 Recovery: if the page does not answer after fifteen minutes, read the
 cloud-init log. An image pull error means the package is private (see
