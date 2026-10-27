@@ -169,9 +169,12 @@ Same environment. Wording only: the hint under the lottery question on
 the questions and scan pages, the README, and the domain model now say
 that the NYC Department of Education assigns the random number and that
 MySchools is where a family sees it, with a link to the DOE's page on
-how students get offers. The DOE page itself could not be fetched from
-this environment; the wording follows the user's correction and the
-cited paper.
+random numbers in admissions. That page was fetched through the
+environment's proxy and read; it states that each applicant is assigned
+a random number once they begin an application, that middle school
+applicants can view it in MySchools under "Edit Profile" after they
+start the application, that it is a UUID sorted `0` to `9` then `A` to
+`F`, and that applicants receive a new random number for each waitlist.
 
 | Check | Outcome |
 | --- | --- |

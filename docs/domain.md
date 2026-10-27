@@ -19,10 +19,13 @@ Random values enter only through a seed.
 
 ## Background
 
-NYC assigns middle school seats with a deferred-acceptance match. The
-Department of Education assigns each applicant one random lottery
-number, a 32-character hexadecimal string compared left to right from
-`0` to `f`, which the family can see in its MySchools account. The DOE uses it to order
+NYC assigns middle school seats with a deferred-acceptance match. New
+York City Public Schools assigns each applicant one random number as
+soon as the family starts an application: a UUID, 32 hexadecimal
+characters with hyphens, compared left to right from `0` to `f` and
+shown in MySchools under "Edit Profile". The DOE's page on random
+numbers in admissions states this and that each waitlist draws a new
+number (see ADR 0003). The DOE uses it to order
 students inside a priority group when the group has more applicants than
 seats [marian2023]. The first two characters place a number in the
 population to a precision of 1/256, about 0.4%, under the uniform
