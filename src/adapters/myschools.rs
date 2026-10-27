@@ -71,21 +71,19 @@ struct AddressDto {
     longitude: Option<String>,
 }
 
-/// The school's coordinates, or `None` when the catalog has none, has an
-/// unparsable value, or has the `0, 0` placeholder an ungeocoded address
-/// carries. A location is optional data for a cosmetic column, so a bad
-/// value drops the point rather than failing the catalog load.
 /// `500 19 STREET, BROOKLYN, NY 11215` as MySchools prints it becomes
-/// `500 19 Street, Brooklyn, NY 11215`: the state and ZIP keep their case.
+/// `500 19 Street, Brooklyn, NY 11215`. A part shaped like a state and
+/// ZIP (`NY 10451`) keeps its case wherever it sits, empty parts go, and a
+/// tail the catalog repeats (`..., Bronx, NY 10451, Bronx, NY 10451`) is
+/// kept once.
 fn address_case(raw: &str) -> String {
-    let parts: Vec<&str> = raw.split(',').map(str::trim).collect();
-    let n = parts.len();
-    parts
-        .iter()
-        .enumerate()
-        .map(|(i, part)| {
-            if i + 1 == n && n > 1 {
-                (*part).to_owned()
+    let mut parts: Vec<String> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(|part| {
+            if is_state_and_zip(part) {
+                part.to_owned()
             } else {
                 // Ordinals such as 86TH keep a lowercase suffix.
                 title_case(part)
@@ -101,10 +99,30 @@ fn address_case(raw: &str) -> String {
                     .join(" ")
             }
         })
-        .collect::<Vec<_>>()
-        .join(", ")
+        .collect();
+    for k in 1..=parts.len() / 2 {
+        let n = parts.len();
+        if parts[n - 2 * k..n - k] == parts[n - k..] {
+            parts.truncate(n - k);
+            break;
+        }
+    }
+    parts.join(", ")
 }
 
+/// `NY 10451`: two capital letters, a space, five digits.
+fn is_state_and_zip(part: &str) -> bool {
+    let bytes = part.as_bytes();
+    bytes.len() == 8
+        && bytes[..2].iter().all(u8::is_ascii_uppercase)
+        && bytes[2] == b' '
+        && bytes[3..].iter().all(u8::is_ascii_digit)
+}
+
+/// The school's coordinates, or `None` when the catalog has none, has an
+/// unparsable value, or has the `0, 0` placeholder an ungeocoded address
+/// carries. A location is optional data for a cosmetic column, so a bad
+/// value drops the point rather than failing the catalog load.
 fn location_of(address: Option<&AddressDto>) -> Option<GeoPoint> {
     let address = address?;
     let latitude: f64 = address.latitude.as_deref()?.trim().parse().ok()?;
@@ -200,6 +218,7 @@ fn catalog_from_entries(
         let dbn = school.school.dbn.trim().to_uppercase();
         let location = location_of(school.school.address.as_ref());
         let address = school.school.full_address.as_deref().map(address_case);
+        let address = address.as_deref();
         let raw_code = school
             .school
             .district
@@ -252,7 +271,7 @@ fn catalog_from_entries(
                     groups,
                 )
                 .with_location(location)
-                .with_address(address.clone()),
+                .with_address(address),
             );
         }
     }
@@ -602,17 +621,14 @@ mod tests {
         let ms442 = d15_d20
             .iter()
             .find(|p| p.dbn == "15K442")
-            .expect("M.S. 442 is in the fixture")
-            .location
-            .expect("geocoded");
-        assert!((ms442.latitude - 40.6562).abs() < 0.001, "{ms442:?}");
-        let address = d15_d20
-            .iter()
-            .find(|p| p.dbn == "15K442")
-            .and_then(|p| p.address.as_deref())
-            .expect("M.S. 442 has an address");
-        assert!(address.contains("Brooklyn, NY"), "{address}");
-        assert!((ms442.longitude + 73.9826).abs() < 0.001, "{ms442:?}");
+            .expect("M.S. 442 is in the fixture");
+        let point = ms442.location.expect("geocoded");
+        assert!((point.latitude - 40.6562).abs() < 0.001, "{point:?}");
+        assert!((point.longitude + 73.9826).abs() < 0.001, "{point:?}");
+        assert_eq!(
+            ms442.address.as_deref(),
+            Some("500 19 Street, Brooklyn, NY 11215")
+        );
         let text = std::fs::read_to_string(&path).expect("reads");
         let documents: Vec<serde_json::Value> = serde_json::from_str(&text).expect("json");
         assert_eq!(catalog_from_documents(&documents).expect("parses"), d15_d20);
@@ -644,6 +660,16 @@ mod tests {
         assert_eq!(
             address_case("650 86TH STREET, BROOKLYN, NY 11228"),
             "650 86th Street, Brooklyn, NY 11228"
+        );
+        assert_eq!(
+            address_case("750 CONCOURSE VILLAGE WEST, BRONX, NY 10451, BRONX, NY 10451"),
+            "750 Concourse Village West, Bronx, NY 10451",
+            "a repeated tail is kept once and the state keeps its case"
+        );
+        assert_eq!(
+            address_case("1 MAIN STREET, , BROOKLYN, NY 11201,"),
+            "1 Main Street, Brooklyn, NY 11201",
+            "empty parts and a trailing comma go"
         );
     }
 }

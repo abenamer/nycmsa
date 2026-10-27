@@ -209,8 +209,10 @@ The visitor's home never goes into a link. The scan JSON and CSV carry
 
 | Check | Outcome |
 | --- | --- |
-| `cargo fmt`, `clippy -D warnings`, `cargo test --locked` | Passed; the fixture test checks M.S. 442's address; the picker test checks that the links carry the school's coordinates and no `origin` |
+| `cargo fmt`, `clippy -D warnings`, `cargo test --locked` | Passed; the fixture test checks M.S. 442's exact address; unit tests cover the title-casing (ordinals, a state and ZIP anywhere, a repeated tail, empty parts) and both link builders, including the address-text fallback when a school has no coordinates; the picker test checks that the links carry the school's coordinates and no `origin` |
 | `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+| Code review on pull request 9 | Seven findings, all applied: the state-and-ZIP rule keys on the part's shape and a repeated tail is kept once (one catalog address had one); doc comments on the right functions; `rel="noopener noreferrer"` on the links; a unit test for the address-text fallback; one `map_links.html` include instead of two copies; the fixture test binds the program once and asserts the exact address; `with_address` borrows. |
+| Security review on pull request 9 | No findings. Checked: the address reaches the page only through askama's escaping and the link hosts are constants, so no attribute break-out, scheme injection or redirect; the default referrer policy sends only the origin to Google, and `noreferrer` now sends nothing; the CSV's free-text columns predate this change and come from the DOE; nothing reads the stored home. |
 
 ## Remote evidence
 

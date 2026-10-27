@@ -338,10 +338,11 @@ impl CatalogProgram {
         self
     }
 
-    pub fn with_address(mut self, address: Option<String>) -> Self {
+    pub fn with_address(mut self, address: Option<&str>) -> Self {
         self.address = address
-            .map(|a| a.trim().to_owned())
-            .filter(|a| !a.is_empty());
+            .map(str::trim)
+            .filter(|a| !a.is_empty())
+            .map(str::to_owned);
         self
     }
 

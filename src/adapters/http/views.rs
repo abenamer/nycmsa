@@ -939,3 +939,37 @@ impl ProgramsPage {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn point() -> GeoPoint {
+        GeoPoint {
+            latitude: 40.6562,
+            longitude: -73.982625,
+        }
+    }
+
+    #[test]
+    fn map_links_carry_the_school_only() {
+        assert_eq!(
+            map_url(Some(point()), Some("ignored when there is a point")),
+            "https://www.google.com/maps/search/?api=1&query=40.656200%2C-73.982625"
+        );
+        assert_eq!(
+            map_url(None, Some("500 19 Street, Brooklyn, NY 11215")),
+            "https://www.google.com/maps/search/?api=1&query=500+19+Street%2C+Brooklyn%2C+NY+11215",
+            "without coordinates the address text is the query"
+        );
+        assert_eq!(map_url(None, Some("  ")), "");
+        assert_eq!(map_url(None, None), "");
+        let directions = directions_url(Some(point()));
+        assert!(directions.starts_with(
+            "https://www.google.com/maps/dir/?api=1&destination=40.656200%2C-73.982625"
+        ));
+        assert!(directions.ends_with("&travelmode=transit"));
+        assert!(!directions.contains("origin="), "no starting point");
+        assert_eq!(directions_url(None), "");
+    }
+}
