@@ -1,9 +1,9 @@
 //! Outbound adapter: state test results per school.
 //!
-//! The server reads `data/school_test_results.csv`, a small file with one
-//! row per school: `dbn,year,ela_proficient_pct,math_proficient_pct`.
-//! `nycmsa fetch-scores` writes it from NYC Open Data (see
-//! `adapters::open_data`).
+//! Reads and writes the CSV shape `dbn,year,ela_proficient_pct,
+//! math_proficient_pct`, one row per school. The server takes its scores
+//! from PostgreSQL; this file format serves the file-based `scan` command
+//! and local exports.
 
 use std::path::{Path, PathBuf};
 
@@ -127,11 +127,5 @@ mod tests {
         let out = temp_file("out.csv", "");
         write_test_results(&out, &results).expect("writes");
         assert_eq!(load_test_results(&out).expect("reloads"), results);
-    }
-
-    #[test]
-    fn the_bundled_results_file_loads() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("data/school_test_results.csv");
-        load_test_results(&path).expect("loads");
     }
 }

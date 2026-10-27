@@ -109,7 +109,8 @@ thread for the list.
 
 | Check | Outcome |
 | --- | --- |
-| `cargo fmt`, `clippy -D warnings`, `cargo test` | Passed: 107 unit tests, 14 HTTP tests; 2 ignored |
+| `cargo fmt`, `clippy -D warnings`, `cargo test` | Passed: 106 unit tests, 14 HTTP tests; 2 ignored |
+| GitHub Actions `rust` job on the first push (c17bf97) | Failed: `the_bundled_results_file_loads` read `data/school_test_results.csv`, which this change removed from git. The test had passed locally only because the untracked file was still on disk. The test was removed (the CSV round-trip test covers the reader) and the suite was re-run locally with the file moved away. |
 | `cargo test --test postgres_reference --test postgres_runs -- --ignored` | Passed |
 | `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed: 36 doc tests |
 | `nycmsa reclassify-profiles` on the stored 784 profiles | Passed. The snapshot source carries one `(reclassified)` suffix after two runs. Tags at or above the 0.5 threshold: Zoned 236, Arts 216, STEM 112, Dual language 59, Humanities 59 (was 62 before "language arts" and "social studies" stopped counting), Honors 39, Careers 6; 237 programs General only. |
