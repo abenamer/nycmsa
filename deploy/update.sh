@@ -12,7 +12,7 @@ main() {
   cd "$(dirname "$0")"
   local raw=https://raw.githubusercontent.com/abenamer/nycmsa/main/deploy
   local f
-  for f in compose.yaml Caddyfile backup.sh update.sh; do
+  for f in compose.yaml Caddyfile backup.sh add-deploy-key.sh update.sh; do
     if ! curl -fsSL "$raw/$f" -o "$f.new"; then
       echo "$(date -Is) could not fetch $f from main; keeping the current file"
       rm -f "$f.new"
@@ -21,7 +21,11 @@ main() {
     if cmp -s "$f.new" "$f"; then
       rm -f "$f.new"
     else
-      chmod --reference="$f" "$f.new"
+      if [ -e "$f" ]; then
+        chmod --reference="$f" "$f.new"
+      elif [[ $f == *.sh ]]; then
+        chmod 0755 "$f.new"
+      fi
       mv "$f.new" "$f"
       echo "$(date -Is) refreshed $f from main"
     fi
