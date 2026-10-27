@@ -1,0 +1,29 @@
+<script>
+document.querySelectorAll('table.sortable th').forEach(function (th, index) {
+  th.title = 'Click to sort';
+  th.addEventListener('click', function () {
+    var table = th.closest('table');
+    var body = table.tBodies[0];
+    var direction = th.getAttribute('data-dir') === 'asc' ? 'desc' : 'asc';
+    table.querySelectorAll('th').forEach(function (h) { h.removeAttribute('data-dir'); });
+    th.setAttribute('data-dir', direction);
+    var value = function (row) {
+      var cell = row.cells[index];
+      var raw = cell.getAttribute('data-v');
+      if (raw === null) { return cell.textContent.trim().toLowerCase(); }
+      var number = parseFloat(raw);
+      return isNaN(number) ? null : number;
+    };
+    var rows = Array.prototype.slice.call(body.rows);
+    rows.sort(function (a, b) {
+      var x = value(a), y = value(b);
+      if (x === null && y === null) { return 0; }
+      if (x === null) { return 1; }
+      if (y === null) { return -1; }
+      if (typeof x === 'number' && typeof y === 'number') { return direction === 'asc' ? x - y : y - x; }
+      return direction === 'asc' ? String(x).localeCompare(String(y)) : String(y).localeCompare(String(x));
+    });
+    rows.forEach(function (row) { body.appendChild(row); });
+  });
+});
+</script>

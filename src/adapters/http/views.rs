@@ -296,7 +296,10 @@ pub struct PickRow {
     pub seats: String,
     pub applicants: String,
     pub ela: String,
+    /// The unrounded figure for sorting; empty when unknown.
+    pub ela_sort: String,
     pub math: String,
+    pub math_sort: String,
 }
 
 #[derive(Template)]
@@ -325,6 +328,8 @@ impl PickerPage {
                 let program = definitions.get(&p.code)?;
                 let scores = state.scan.scores_for(&p.dbn);
                 let focus = state.profiles.tags(p.code.as_str());
+                let (ela, ela_sort) = score(scores.and_then(|s| s.ela_proficient_pct));
+                let (math, math_sort) = score(scores.and_then(|s| s.math_proficient_pct));
                 Some(PickRow {
                     code: p.code.to_string(),
                     district: p.district.to_string(),
@@ -341,8 +346,10 @@ impl PickerPage {
                         .join(", "),
                     seats: opt(p.seats),
                     applicants: opt(p.applicants),
-                    ela: score(scores.and_then(|s| s.ela_proficient_pct)).0,
-                    math: score(scores.and_then(|s| s.math_proficient_pct)).0,
+                    ela,
+                    ela_sort,
+                    math,
+                    math_sort,
                 })
             })
             .collect();
