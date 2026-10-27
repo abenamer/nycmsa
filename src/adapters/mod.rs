@@ -4,6 +4,7 @@
 
 pub mod dto;
 pub mod in_memory_runs;
+pub mod infohub;
 pub mod json_files;
 pub mod myschools;
 pub mod myschools_api;
@@ -14,6 +15,7 @@ pub mod system_clock;
 pub mod test_results;
 
 pub use in_memory_runs::InMemoryRunRepository;
+pub use infohub::InfoHubClient;
 pub use myschools_api::MySchoolsApiClient;
 pub use open_data::NycOpenDataClient;
 pub use postgres_reference::PostgresReferenceData;

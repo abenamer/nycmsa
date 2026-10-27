@@ -160,9 +160,21 @@ text "District 9" both give `d9`.
 
 The scan page shows, for each school, the share of its students at
 proficiency (levels 3 and 4) on the New York State ELA and Math tests, for
-the latest year NYC Open Data holds (2023 at the time of writing). The
-figures are keyed by the school's DBN and are informational; the
-simulation does not use them.
+the latest year the source holds. The default source is the DOE InfoHub
+school workbooks (2026 at the time of writing); NYC Open Data (2013 to
+2023) is the fallback. The figures are keyed by the school's DBN and are
+informational; the simulation does not use them. A suppressed figure
+(groups of five or fewer tested students, shown as `s` by the DOE) reads
+as unknown.
+
+## Caveats shown to users
+
+Each results page carries the same caveats: the model is a simplified
+cutoff view of the match; every figure is last year's as reported on
+MySchools; program figures are read from rounded prose by machine and
+nine were entered by hand; test scores describe the school and are read
+from the DOE's spreadsheets by machine; screens are approximated by the
+test-placement answer; the waitlist rule is an assumption.
 
 ## Catalog scan
 

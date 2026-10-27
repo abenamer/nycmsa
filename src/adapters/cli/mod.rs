@@ -146,8 +146,20 @@ pub struct FetchArgs {
     pub database: DatabaseArgs,
 }
 
+/// Where to download state test results from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
+pub enum ScoreSource {
+    /// DOE InfoHub workbooks, the latest published year.
+    #[default]
+    Infohub,
+    /// NYC Open Data datasets, which end at 2023.
+    OpenData,
+}
+
 #[derive(Debug, Args)]
 pub struct FetchScoresArgs {
+    #[arg(long, value_enum, default_value_t)]
+    pub source: ScoreSource,
     #[command(flatten)]
     pub database: DatabaseArgs,
 }
@@ -173,6 +185,8 @@ pub struct BootstrapArgs {
     /// Districts to download when the catalog is missing.
     #[arg(long, default_value = "all")]
     pub districts: String,
+    #[arg(long, value_enum, default_value_t)]
+    pub source: ScoreSource,
     #[command(flatten)]
     pub database: DatabaseArgs,
 }

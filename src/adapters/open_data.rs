@@ -13,7 +13,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::application::{DownloadError, TestResultsDownloader, TestResultsSnapshot};
-use crate::domain::{SchoolScores, TestResults};
+use crate::domain::{combine_subjects, SubjectResults};
 
 pub const DEFAULT_BASE_URL: &str = "https://data.cityofnewyork.us/resource/";
 
@@ -49,13 +49,6 @@ pub struct NycOpenDataClient {
 #[error("cannot build the HTTP client: {0}")]
 pub struct ClientBuildError(#[from] reqwest::Error);
 
-/// Percent of students at levels 3 and 4 per DBN for one subject and year.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct SubjectResults {
-    pub year: u32,
-    pub by_dbn: BTreeMap<String, Option<f64>>,
-}
-
 /// Reads the school rows of one dataset for one year.
 pub fn parse_rows(dataset: Dataset, year: u32, rows: &[Value]) -> SubjectResults {
     let mut by_dbn = BTreeMap::new();
@@ -74,33 +67,6 @@ pub fn parse_rows(dataset: Dataset, year: u32, rows: &[Value]) -> SubjectResults
         by_dbn.insert(dbn, proficient);
     }
     SubjectResults { year, by_dbn }
-}
-
-/// Combines the two subjects. Each school takes the later of the two years;
-/// a subject from an earlier year reads as unknown.
-pub fn combine(ela: &SubjectResults, math: &SubjectResults) -> TestResults {
-    let year = ela.year.max(math.year);
-    let dbns: std::collections::BTreeSet<&String> =
-        ela.by_dbn.keys().chain(math.by_dbn.keys()).collect();
-    dbns.into_iter()
-        .map(|dbn| {
-            let pick = |subject: &SubjectResults| {
-                if subject.year == year {
-                    subject.by_dbn.get(dbn).copied().flatten()
-                } else {
-                    None
-                }
-            };
-            (
-                dbn.clone(),
-                SchoolScores {
-                    year,
-                    ela_proficient_pct: pick(ela),
-                    math_proficient_pct: pick(math),
-                },
-            )
-        })
-        .collect()
 }
 
 impl NycOpenDataClient {
@@ -167,7 +133,7 @@ impl TestResultsDownloader for NycOpenDataClient {
         let ela = self.subject(ELA).await?;
         let math = self.subject(MATH).await?;
         Ok(TestResultsSnapshot {
-            results: combine(&ela, &math),
+            results: combine_subjects(&ela, &math),
             source: format!(
                 "NYC Open Data {} (ELA {}) and {} (Math {})",
                 ELA.id, ela.year, MATH.id, math.year
@@ -191,34 +157,5 @@ mod tests {
         assert_eq!(parsed.by_dbn.len(), 2);
         assert_eq!(parsed.by_dbn["15K442"], Some(71.5));
         assert_eq!(parsed.by_dbn["01M015"], None);
-    }
-
-    #[test]
-    fn combine_uses_the_later_year_and_blanks_the_other_subject() {
-        let ela = SubjectResults {
-            year: 2023,
-            by_dbn: [
-                ("15K442".to_owned(), Some(71.5)),
-                ("20K062".to_owned(), None),
-            ]
-            .into_iter()
-            .collect(),
-        };
-        let math = SubjectResults {
-            year: 2022,
-            by_dbn: [("15K442".to_owned(), Some(60.0))].into_iter().collect(),
-        };
-        let results = combine(&ela, &math);
-        assert_eq!(results.len(), 2);
-        assert_eq!(
-            results["15K442"],
-            SchoolScores {
-                year: 2023,
-                ela_proficient_pct: Some(71.5),
-                math_proficient_pct: None
-            }
-        );
-        let same_year = combine(&ela, &SubjectResults { year: 2023, ..math });
-        assert_eq!(same_year["15K442"].math_proficient_pct, Some(60.0));
     }
 }

@@ -136,9 +136,10 @@ nycmsa sim   [--programs data/programs.json] [--student data/student.json]
              [--twain-pct 0.25] [--lottery B0] [--json]
 nycmsa scan  CATALOG.json [--frl] [--attrs d15,d20] [--lottery BD] [--csv out.csv]
 nycmsa fetch        [--districts all] --database-url URL
-nycmsa fetch-scores --database-url URL
+nycmsa fetch-scores [--source infohub|open-data] --database-url URL
 nycmsa import       [--programs data/programs.json] [--student data/student.json] --database-url URL
-nycmsa bootstrap    [--programs ...] [--student ...] [--districts all] --database-url URL
+nycmsa bootstrap    [--programs ...] [--student ...] [--districts all]
+                    [--source infohub|open-data] --database-url URL
 nycmsa serve        [--bind 127.0.0.1:8080] --database-url URL
 ```
 

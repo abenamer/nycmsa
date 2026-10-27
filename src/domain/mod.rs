@@ -7,10 +7,10 @@ pub mod program;
 pub mod simulation;
 pub mod student;
 
-pub use catalog::{programs_from_catalog, scan, with_boroughs};
+pub use catalog::{combine_subjects, programs_from_catalog, scan, with_boroughs};
 pub use catalog::{
     Borough, CatalogGroup, CatalogProgram, DemandPair, DistrictCode, GroupDemandText,
-    PriorityCriterion, Reach, ScanRequest, ScanRow, SchoolScores, TestResults,
+    PriorityCriterion, Reach, ScanRequest, ScanRow, SchoolScores, SubjectResults, TestResults,
 };
 pub use lottery::{InvalidLotteryPrefix, InvalidUnitInterval, LotteryPrefix, UnitInterval};
 pub use program::{

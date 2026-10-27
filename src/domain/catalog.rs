@@ -239,6 +239,40 @@ pub struct SchoolScores {
 /// Test results keyed by school DBN, such as `15K442`.
 pub type TestResults = std::collections::BTreeMap<String, SchoolScores>;
 
+/// One subject's proficiency share per DBN for one test year. `None`
+/// marks a figure the DOE suppressed.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SubjectResults {
+    pub year: u32,
+    pub by_dbn: std::collections::BTreeMap<String, Option<f64>>,
+}
+
+/// Combines the ELA and Math subjects. Each school takes the later of the
+/// two years; a subject from an earlier year reads as unknown.
+pub fn combine_subjects(ela: &SubjectResults, math: &SubjectResults) -> TestResults {
+    let year = ela.year.max(math.year);
+    let dbns: BTreeSet<&String> = ela.by_dbn.keys().chain(math.by_dbn.keys()).collect();
+    dbns.into_iter()
+        .map(|dbn| {
+            let pick = |subject: &SubjectResults| {
+                if subject.year == year {
+                    subject.by_dbn.get(dbn).copied().flatten()
+                } else {
+                    None
+                }
+            };
+            (
+                dbn.clone(),
+                SchoolScores {
+                    year,
+                    ela_proficient_pct: pick(ela),
+                    math_proficient_pct: pick(math),
+                },
+            )
+        })
+        .collect()
+}
+
 /// A program as listed in the MySchools catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogProgram {
@@ -1075,6 +1109,35 @@ mod tests {
             &request(&["d15"], false, "BD"),
         );
         assert_eq!(none[0].scores, None);
+    }
+
+    #[test]
+    fn combine_uses_the_later_year_and_blanks_the_other_subject() {
+        let ela = SubjectResults {
+            year: 2026,
+            by_dbn: [
+                ("15K442".to_owned(), Some(75.0)),
+                ("20K062".to_owned(), None),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        let math = SubjectResults {
+            year: 2025,
+            by_dbn: [("15K442".to_owned(), Some(60.0))].into_iter().collect(),
+        };
+        let results = combine_subjects(&ela, &math);
+        assert_eq!(results.len(), 2);
+        assert_eq!(
+            results["15K442"],
+            SchoolScores {
+                year: 2026,
+                ela_proficient_pct: Some(75.0),
+                math_proficient_pct: None
+            }
+        );
+        let same_year = combine_subjects(&ela, &SubjectResults { year: 2026, ..math });
+        assert_eq!(same_year["15K442"].math_proficient_pct, Some(60.0));
     }
 
     #[test]

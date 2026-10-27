@@ -134,9 +134,16 @@ hand-entered programs replace the derived entries of the same codes.
 1. Run `nycmsa fetch-scores` (with Compose: `docker compose run --rm init fetch-scores`).
 2. Restart the server.
 
-Expected result: the command prints the number of schools and the source
-years, and the scan page shows ELA and Math columns. The datasets end at
-2023; later years appear on NYC Open Data when the DOE publishes them.
+Expected result: the command downloads two workbooks of about 50 MB each
+from the DOE InfoHub, prints the number of schools and the years it
+found, and the scan page shows ELA and Math columns for that year.
+`--source open-data` uses the NYC Open Data datasets instead, which end
+at 2023.
+
+After a refresh, do the cross-check in the [self-audit](self-audit.md):
+read the same workbooks with a second tool and compare the stored
+values. The reader fails on a missing sheet or column, but a reordered
+or renamed value column would need this check to catch it.
 
 ## Update the hand-entered programs or the form defaults
 

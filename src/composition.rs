@@ -13,7 +13,7 @@ use tokio::sync::Semaphore;
 use crate::adapters::cli::render::{render_report, render_scan};
 use crate::adapters::cli::{
     scan_request, simulation_request, BootstrapArgs, DatabaseArgs, FetchArgs, FetchScoresArgs,
-    ImportArgs, ScanArgs, ServeArgs, SimArgs,
+    ImportArgs, ScanArgs, ScoreSource, ServeArgs, SimArgs,
 };
 use crate::adapters::csv_export::scan_rows_csv;
 use crate::adapters::dto::{student_from_dto, student_to_dto, InvalidInput, StudentDto};
@@ -21,12 +21,12 @@ use crate::adapters::http::{router, AppState, HttpLimits};
 use crate::adapters::json_files::{load_program_definitions, load_student, FileLoadError};
 use crate::adapters::myschools::{catalog_from_documents, load_catalog, CatalogLoadError};
 use crate::adapters::myschools_api::{ClientBuildError, DEFAULT_BASE_URL};
-use crate::adapters::open_data;
 use crate::adapters::postgres_runs::PostgresSetupError;
+use crate::adapters::{infohub, open_data};
 
 use crate::adapters::{
-    InMemoryRunRepository, MySchoolsApiClient, NycOpenDataClient, PostgresReferenceData,
-    PostgresRunRepository, SystemClock,
+    InMemoryRunRepository, InfoHubClient, MySchoolsApiClient, NycOpenDataClient,
+    PostgresReferenceData, PostgresRunRepository, SystemClock,
 };
 use crate::application::{
     Clock, DistrictFilter, DownloadError, ImportSeeds, LoadReferenceData, ReferenceError,
@@ -57,6 +57,8 @@ pub enum AppError {
     Client(#[from] ClientBuildError),
     #[error(transparent)]
     OpenDataClient(#[from] open_data::ClientBuildError),
+    #[error(transparent)]
+    InfoHubClient(#[from] infohub::ClientBuildError),
     #[error(transparent)]
     Postgres(#[from] PostgresSetupError),
     #[error("cannot write CSV: {0}")]
@@ -160,13 +162,27 @@ async fn fetch_catalog(
     Ok(format!("stored a catalog snapshot of {count} schools\n"))
 }
 
-async fn fetch_scores(reference: PostgresReferenceData) -> Result<String, AppError> {
-    let client = NycOpenDataClient::new(open_data::DEFAULT_BASE_URL.to_owned())?;
-    let (count, source) = RefreshTestResults::new(client, reference, SystemClock)
-        .execute()
-        .await?;
+async fn fetch_scores(
+    reference: PostgresReferenceData,
+    source: ScoreSource,
+) -> Result<String, AppError> {
+    let (count, description) = match source {
+        ScoreSource::Infohub => {
+            let client =
+                InfoHubClient::new(infohub::ELA_URL.to_owned(), infohub::MATH_URL.to_owned())?;
+            RefreshTestResults::new(client, reference, SystemClock)
+                .execute()
+                .await?
+        }
+        ScoreSource::OpenData => {
+            let client = NycOpenDataClient::new(open_data::DEFAULT_BASE_URL.to_owned())?;
+            RefreshTestResults::new(client, reference, SystemClock)
+                .execute()
+                .await?
+        }
+    };
     Ok(format!(
-        "stored test results for {count} schools from {source}\n"
+        "stored test results for {count} schools from {description}\n"
     ))
 }
 
@@ -200,7 +216,7 @@ pub async fn run_fetch(args: &FetchArgs) -> Result<String, AppError> {
 /// `nycmsa fetch-scores`: download the test results into the database.
 pub async fn run_fetch_scores(args: &FetchScoresArgs) -> Result<String, AppError> {
     let (_, reference) = connect(&args.database).await?;
-    fetch_scores(reference).await
+    fetch_scores(reference, args.source).await
 }
 
 /// `nycmsa import`: store the seed files.
@@ -224,7 +240,7 @@ pub async fn run_bootstrap(args: &BootstrapArgs) -> Result<String, AppError> {
         report.push_str(&fetch_catalog(reference.clone(), &args.districts).await?);
     }
     if !inventory.results {
-        report.push_str(&fetch_scores(reference).await?);
+        report.push_str(&fetch_scores(reference, args.source).await?);
     }
     if report.is_empty() {
         report.push_str("the database already holds every reference set\n");

@@ -70,5 +70,6 @@
   <li>{{ a }}</li>
 {% endfor %}
 </ul>
+{% include "caveats.html" %}
 <p class="muted">Result #{{ id }}, {{ created_at }}. <a href="/">Try different answers</a> · <a href="/api/runs/{{ id }}">All the numbers (JSON)</a></p>
 {% endblock %}

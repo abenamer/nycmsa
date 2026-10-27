@@ -72,6 +72,21 @@ became reachable.
 | Comparison of the catalog scan with Python | No longer identical by design: borough priority groups now admit students; see the domain model |
 | `docker compose up` with the `init` service | Not run: no Docker daemon in the development container. The CI `docker` job builds the image and runs `sim` inside it; the Compose flow is unverified. |
 
+## Local evidence: 2026-10-27 (InfoHub test results)
+
+Same environment; `infohub.nyced.org` became reachable.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt`, `clippy -D warnings`, `cargo test` | Passed: 97 unit tests (3 on the fixture workbooks), 13 HTTP tests; 2 ignored |
+| `nycmsa fetch-scores` (InfoHub) | Passed in 17 s: two workbooks of about 50 MB, 1,129 schools, ELA 2026 and Math 2026, stored as a new snapshot |
+| Cross-check of the Rust reader | Passed: the same two workbooks read with Python `openpyxl` 3 (filter `Grade = All Grades`, `Category = All Students`, latest year, `s` as unknown) gave 1,129 schools and 0 differing fields against the stored snapshot. 1,122 schools have an ELA figure and 1,105 a Math figure. |
+| Scan page | Passed: shows "2026 New York State tests" and the caveats section; M.S. 442 reads ELA 77.6%, Math 85.0% |
+
+The cross-check is a one-time local result for the workbooks published on
+2026-08-03. Repeat it after each refresh; the reader detects a missing
+sheet or column but not a renamed value column.
+
 ## Remote evidence
 
 None yet. After the first push, record here the GitHub Actions run that

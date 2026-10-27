@@ -101,6 +101,8 @@ within Monte Carlo error; the scan output is identical.
 
 ## Sources
 
+- NYC DOE InfoHub test results:
+  <https://infohub.nyced.org/reports/academics/test-results>
 - Marian, A. (2023). *Algorithmic Transparency and Accountability through
   Crowdsourcing: A Study of the NYC School Admission Lottery.* FAccT '23.
   <https://doi.org/10.1145/3593013.3594009>

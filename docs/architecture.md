@@ -36,7 +36,8 @@ For a refresh, `composition::run_fetch` calls
 `CatalogDownloader` port (`adapters::MySchoolsApiClient`) and stores
 through the `CatalogStore` port (`adapters::PostgresReferenceData`).
 `RefreshTestResults` does the same with `TestResultsDownloader`
-(`adapters::NycOpenDataClient`) and `TestResultsStore`. `ImportSeeds`
+(`adapters::InfoHubClient` by default, `adapters::NycOpenDataClient` on
+request) and `TestResultsStore`. `ImportSeeds`
 stores the seed files through `ProgramStore` and `StudentDefaultsStore`.
 See [ADR 0004](decisions/0004-reference-data-in-postgres.md).
 
@@ -54,6 +55,7 @@ hand-entered programs on top.
 | `adapters::json_files` | Loads `programs.json` and `student.json`. |
 | `adapters::myschools` | Parses the MySchools catalog and its prose. |
 | `adapters::myschools_api` | Downloads the catalog over HTTPS. |
+| `adapters::infohub` | Downloads and reads the DOE InfoHub results workbooks. |
 | `adapters::open_data` | Downloads state test results from NYC Open Data. |
 | `adapters::test_results` | Reads and writes a results CSV for offline tools. |
 | `adapters::postgres_reference` | PostgreSQL store of the catalog, results, programs, and defaults. |
