@@ -53,7 +53,7 @@
   {% for r in rows %}
     <tr data-code="{{ r.code }}" data-district="{{ r.district }}" data-focus="{{ r.focus_slugs }}" data-screened="{{ r.screened }}" data-text="{{ r.school }} {{ r.program }} {{ r.code }}" data-lat="{{ r.lat }}" data-lon="{{ r.lon }}">
       <td><button type="button" class="code" data-code="{{ r.code }}">{{ r.code }}</button></td>
-      <td>{{ r.school }}<div class="hint">{{ r.program }}</div></td>
+      <td>{{ r.school }}<div class="hint">{{ r.program }}</div>{% include "map_links.html" %}</td>
       <td data-v="{{ r.district }}">{{ r.district }} <small class="muted">{{ r.borough }}</small></td>
       <td>{{ r.picks_by }}</td>
       <td><a href="/profiles?district={{ r.district }}#{{ r.code }}" class="muted">{{ r.focus_labels }}</a></td>

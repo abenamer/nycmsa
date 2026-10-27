@@ -228,8 +228,9 @@ from word matching, with the evidence shown.
 
 ## Catalog scan
 
-Each `CatalogProgram` carries its school's `GeoPoint` when the catalog
-has one (the DOE geocodes every school address). The server does no
+Each `CatalogProgram` carries its school's street address and its
+`GeoPoint` when the catalog has them (the DOE geocodes every school
+address). The server does no
 distance arithmetic: the pages print the coordinates and the browser
 measures the straight line to the family's address.
 

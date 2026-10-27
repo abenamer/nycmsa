@@ -60,6 +60,8 @@ struct SchoolDto {
     district: Option<DistrictDto>,
     #[serde(default)]
     address: Option<AddressDto>,
+    #[serde(default)]
+    full_address: Option<String>,
 }
 
 /// The geocoded address; MySchools gives the coordinates as strings.
@@ -67,6 +69,54 @@ struct SchoolDto {
 struct AddressDto {
     latitude: Option<String>,
     longitude: Option<String>,
+}
+
+/// `500 19 STREET, BROOKLYN, NY 11215` as MySchools prints it becomes
+/// `500 19 Street, Brooklyn, NY 11215`. A part shaped like a state and
+/// ZIP (`NY 10451`) keeps its case wherever it sits, empty parts go, and a
+/// tail the catalog repeats (`..., Bronx, NY 10451, Bronx, NY 10451`) is
+/// kept once.
+fn address_case(raw: &str) -> String {
+    let mut parts: Vec<String> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(|part| {
+            if is_state_and_zip(part) {
+                part.to_owned()
+            } else {
+                // Ordinals such as 86TH keep a lowercase suffix.
+                title_case(part)
+                    .split(' ')
+                    .map(|w| {
+                        if w.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                            w.to_lowercase()
+                        } else {
+                            w.to_owned()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            }
+        })
+        .collect();
+    for k in 1..=parts.len() / 2 {
+        let n = parts.len();
+        if parts[n - 2 * k..n - k] == parts[n - k..] {
+            parts.truncate(n - k);
+            break;
+        }
+    }
+    parts.join(", ")
+}
+
+/// `NY 10451`: two capital letters, a space, five digits.
+fn is_state_and_zip(part: &str) -> bool {
+    let bytes = part.as_bytes();
+    bytes.len() == 8
+        && bytes[..2].iter().all(u8::is_ascii_uppercase)
+        && bytes[2] == b' '
+        && bytes[3..].iter().all(u8::is_ascii_digit)
 }
 
 /// The school's coordinates, or `None` when the catalog has none, has an
@@ -167,6 +217,8 @@ fn catalog_from_entries(
         let school_name = school.school.name;
         let dbn = school.school.dbn.trim().to_uppercase();
         let location = location_of(school.school.address.as_ref());
+        let address = school.school.full_address.as_deref().map(address_case);
+        let address = address.as_deref();
         let raw_code = school
             .school
             .district
@@ -218,7 +270,8 @@ fn catalog_from_entries(
                     general.as_ref().and_then(|g| g.all_seats_filled),
                     groups,
                 )
-                .with_location(location),
+                .with_location(location)
+                .with_address(address),
             );
         }
     }
@@ -568,11 +621,14 @@ mod tests {
         let ms442 = d15_d20
             .iter()
             .find(|p| p.dbn == "15K442")
-            .expect("M.S. 442 is in the fixture")
-            .location
-            .expect("geocoded");
-        assert!((ms442.latitude - 40.6562).abs() < 0.001, "{ms442:?}");
-        assert!((ms442.longitude + 73.9826).abs() < 0.001, "{ms442:?}");
+            .expect("M.S. 442 is in the fixture");
+        let point = ms442.location.expect("geocoded");
+        assert!((point.latitude - 40.6562).abs() < 0.001, "{point:?}");
+        assert!((point.longitude + 73.9826).abs() < 0.001, "{point:?}");
+        assert_eq!(
+            ms442.address.as_deref(),
+            Some("500 19 Street, Brooklyn, NY 11215")
+        );
         let text = std::fs::read_to_string(&path).expect("reads");
         let documents: Vec<serde_json::Value> = serde_json::from_str(&text).expect("json");
         assert_eq!(catalog_from_documents(&documents).expect("parses"), d15_d20);
@@ -592,6 +648,29 @@ mod tests {
         assert_eq!(point("forty", "-73.9"), None, "not a number");
         assert_eq!(point("NaN", "-73.9"), None);
         assert_eq!(location_of(None), None);
+    }
+
+    #[test]
+    fn addresses_are_title_cased_except_the_state_and_zip() {
+        assert_eq!(
+            address_case("500 19 STREET, BROOKLYN, NY 11215"),
+            "500 19 Street, Brooklyn, NY 11215"
+        );
+        assert_eq!(address_case("610 HENRY STREET"), "610 Henry Street");
+        assert_eq!(
+            address_case("650 86TH STREET, BROOKLYN, NY 11228"),
+            "650 86th Street, Brooklyn, NY 11228"
+        );
+        assert_eq!(
+            address_case("750 CONCOURSE VILLAGE WEST, BRONX, NY 10451, BRONX, NY 10451"),
+            "750 Concourse Village West, Bronx, NY 10451",
+            "a repeated tail is kept once and the state keeps its case"
+        );
+        assert_eq!(
+            address_case("1 MAIN STREET, , BROOKLYN, NY 11201,"),
+            "1 Main Street, Brooklyn, NY 11201",
+            "empty parts and a trailing comma go"
+        );
     }
 }
 

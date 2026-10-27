@@ -289,6 +289,8 @@ pub struct CatalogProgram {
     pub dbn: String,
     /// Where the school is, when the catalog says.
     pub location: Option<GeoPoint>,
+    /// The school's street address as MySchools prints it.
+    pub address: Option<String>,
     pub school_name: String,
     pub code: ProgramCode,
     pub program_name: String,
@@ -319,6 +321,7 @@ impl CatalogProgram {
             district,
             dbn,
             location: None,
+            address: None,
             school_name,
             code,
             program_name,
@@ -332,6 +335,14 @@ impl CatalogProgram {
 
     pub fn with_location(mut self, location: Option<GeoPoint>) -> Self {
         self.location = location;
+        self
+    }
+
+    pub fn with_address(mut self, address: Option<&str>) -> Self {
+        self.address = address
+            .map(str::trim)
+            .filter(|a| !a.is_empty())
+            .map(str::to_owned);
         self
     }
 
@@ -787,6 +798,7 @@ pub struct ScanRow {
     pub district: DistrictCode,
     pub dbn: String,
     pub location: Option<GeoPoint>,
+    pub address: Option<String>,
     pub school_name: String,
     pub code: ProgramCode,
     pub program_name: String,
@@ -868,6 +880,7 @@ pub fn scan(
                 district: program.district.clone(),
                 dbn: program.dbn.clone(),
                 location: program.location,
+                address: program.address.clone(),
                 school_name: program.school_name.clone(),
                 code: program.code.clone(),
                 program_name: program.program_name.clone(),

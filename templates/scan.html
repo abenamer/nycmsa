@@ -41,7 +41,7 @@
   <tbody>
   {% for r in rows %}
     <tr data-lat="{{ r.lat }}" data-lon="{{ r.lon }}">
-      <td>{{ r.school }}<div class="hint">{{ r.program }} · <code>{{ r.code }}</code></div></td>
+      <td>{{ r.school }}<div class="hint">{{ r.program }} · <code>{{ r.code }}</code></div>{% include "map_links.html" %}</td>
       <td data-v="{{ r.district }}">{{ r.district }}</td>
       <td>{{ r.method }}</td>
       <td class="num" data-v="{{ r.seats }}">{{ r.seats }}</td>

@@ -198,6 +198,22 @@ sorts by it. The server never sees the address.
 | Code review on pull request 8 | Nine findings, all applied: a wrong coordinate in this table; a geocoder error status now reads as a failed lookup, not "not found"; the picker's filter listener no longer fires on the address box; a reload sorts by distance again; a malformed stored home is ignored; the `0, 0` placeholder is not a location; doc comments on the right structs; the CSV's new columns are appended, not inserted; and why a bad coordinate is `None` rather than an error is stated on the function. |
 | Security review on pull request 8 | No findings. Checked: the geocoder's label and coordinates reach the page only through `textContent`, `value` and arithmetic; the fetch URL encodes the address; the address box has no form name and no form action, so nothing carries it to this server; coordinates are numeric in the templates, JSON and CSV. |
 
+## Local evidence: 2026-10-27 (map and directions links)
+
+Same environment. Each school's street address (from the catalog) now
+shows under its name in the picker and scan tables as a Google Maps
+link by coordinates, with a Directions link that opens Google Maps
+transit directions to the school and leaves the starting point blank.
+The visitor's home never goes into a link. The scan JSON and CSV carry
+`address`.
+
+| Check | Outcome |
+| --- | --- |
+| `cargo fmt`, `clippy -D warnings`, `cargo test --locked` | Passed; the fixture test checks M.S. 442's exact address; unit tests cover the title-casing (ordinals, a state and ZIP anywhere, a repeated tail, empty parts) and both link builders, including the address-text fallback when a school has no coordinates; the picker test checks that the links carry the school's coordinates and no `origin` |
+| `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
+| Code review on pull request 9 | Seven findings, all applied: the state-and-ZIP rule keys on the part's shape and a repeated tail is kept once (one catalog address had one); doc comments on the right functions; `rel="noopener noreferrer"` on the links; a unit test for the address-text fallback; one `map_links.html` include instead of two copies; the fixture test binds the program once and asserts the exact address; `with_address` borrows. |
+| Security review on pull request 9 | No findings. Checked: the address reaches the page only through askama's escaping and the link hosts are constants, so no attribute break-out, scheme injection or redirect; the default referrer policy sends only the origin to Google, and `noreferrer` now sends nothing; the CSV's free-text columns predate this change and come from the DOE; nothing reads the stored home. |
+
 ## Remote evidence
 
 | Revision | Run | Outcome |
@@ -206,6 +222,7 @@ sorts by it. The server never sees the address.
 | 93a411c (pull request 2, 2026-10-27) | GitHub Actions run 40456654387 (pull request) and 40456650876 (push) | Passed: the same three jobs |
 | 077fcc3 (pull request 4, 2026-10-27) | GitHub Actions run 40468033725 (pull request) and 40468028557 (push) | Passed: the same three jobs, with the PostgreSQL step running only the reference-store test |
 | 6aa1a53 (pull request 8, 2026-10-27) | GitHub Actions run 40472544141 (pull request) and 40472539221 (push) | Passed: the same three jobs |
+| de29950 (pull request 9, 2026-10-27) | GitHub Actions run 40479276795 (pull request) and 40479271672 (push) | Passed: the same three jobs |
 
 The two earlier pushes on the same pull request failed in `rust`; the
 local-evidence table above records why and the fix for each. A commit
