@@ -68,8 +68,9 @@ them.
 
 1. Optional: set `POSTGRES_PASSWORD` in the shell or a `.env` file. The
    default password is `nycmsa` and is suitable only for a private host.
+   Set `NYCMSA_PORT` when host port 8080 is taken.
 2. Run `docker compose up --build -d`.
-3. Open `http://127.0.0.1:8080`.
+3. Open `http://127.0.0.1:8080` (or the port you set).
 
 Expected result: `docker compose ps` lists `db` as healthy, `init` as
 exited with code 0, and `app` as running. On the first start `init` runs

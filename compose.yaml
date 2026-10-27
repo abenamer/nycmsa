@@ -2,7 +2,7 @@
 # fills it, and the web app.
 #
 #   docker compose up --build
-#   open http://127.0.0.1:8080
+#   open http://127.0.0.1:8080   (or NYCMSA_PORT=8090 docker compose up --build)
 #
 # Everything the app reads lives in PostgreSQL: simulation runs, the
 # MySchools catalog, state test results, the hand-entered programs, and
@@ -50,8 +50,9 @@ services:
       DATABASE_URL: postgres://nycmsa:${POSTGRES_PASSWORD:-nycmsa}@db:5432/nycmsa
       RUST_LOG: info
     ports:
-      # Loopback only: every endpoint is anonymous.
-      - "127.0.0.1:8080:8080"
+      # Loopback only: every endpoint is anonymous. Set NYCMSA_PORT to use
+      # another host port, for example NYCMSA_PORT=8090 docker compose up -d
+      - "127.0.0.1:${NYCMSA_PORT:-8080}:8080"
     restart: unless-stopped
 
 volumes:
