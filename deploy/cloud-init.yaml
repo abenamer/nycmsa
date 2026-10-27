@@ -52,7 +52,10 @@ runcmd:
   # A random database password and plain HTTP until a hostname is set.
   - sh -c 'printf "POSTGRES_PASSWORD=%s\nSITE_ADDRESS=:80\n" "$(openssl rand -hex 24)" > /opt/nycmsa/.env'
   - chmod 0600 /opt/nycmsa/.env
-  - cd /opt/nycmsa && docker compose up -d
+  # Three attempts: bootstrap downloads from MySchools, NYC Open Data and
+  # InfoHub, and a failed download leaves `init` stopped. `up -d` starts
+  # it again on the next attempt, and update.sh does so daily after that.
+  - cd /opt/nycmsa && for i in 1 2 3; do docker compose up -d && break; echo "attempt $i failed; retrying in 60 s"; sleep 60; done
   # Daily database dump at 03:10 and image update at 04:17, server time (UTC).
   - sh -c 'printf "10 3 * * * root /opt/nycmsa/backup.sh >> /var/log/nycmsa-backup.log 2>&1\n17 4 * * * root /opt/nycmsa/update.sh >> /var/log/nycmsa-update.log 2>&1\n" > /etc/cron.d/nycmsa'
   - chmod 0644 /etc/cron.d/nycmsa

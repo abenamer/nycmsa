@@ -146,6 +146,7 @@ Same environment. No Rust code changed.
 | `python scripts/check_docs.py`, `python -m unittest discover -s tests` | Passed |
 | Creating a Droplet from the cloud-init file | Not run: no DigitalOcean credentials in this environment. The first real Droplet is the test; record its outcome here. |
 | CI image push to `ghcr.io/abenamer/nycmsa` | Not run until the change merges: the step runs only on a push to `main`. Check the package exists and is public after the merge. |
+| Code review on pull request 5 (the same change reopened on top of the privacy change) | Four findings, all applied: `update.sh` runs as one function read in full before it executes, so refreshing itself cannot garble the run; a failed file fetch is logged and skipped instead of aborting before the image pull; cloud-init tries `docker compose up -d` three times a minute apart, and every later `up -d` starts a stopped `init` again; the operations doc names the `publish` job. |
 ## Local evidence: 2026-10-28 (no user input on the server)
 
 Same environment. Simulation runs are no longer stored; results live in

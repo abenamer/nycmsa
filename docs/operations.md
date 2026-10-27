@@ -187,8 +187,8 @@ previous set stays in the database.
 The `deploy/` directory holds a production Compose file that runs the
 prebuilt image behind Caddy, and a cloud-init file that turns a fresh
 Ubuntu Droplet into a running server without logging in. CI pushes the
-image to `ghcr.io/abenamer/nycmsa` on every merge to `main` (job
-`docker`, step "Push the image"), so the server never compiles anything.
+image to `ghcr.io/abenamer/nycmsa` on every merge to `main` (the
+`publish` job), so the server never compiles anything.
 
 Prerequisites: a DigitalOcean account with an SSH key added; the
 container image public under the repository owner's packages (check at
@@ -232,7 +232,9 @@ Recovery: if the page does not answer after fifteen minutes, read the
 cloud-init log. An image pull error means the package is private (see
 prerequisites); make it public and run `cd /opt/nycmsa && docker compose
 up -d`. A bootstrap error means a download from MySchools, NYC Open Data
-or InfoHub failed; run `docker compose run --rm init bootstrap` again.
+or InfoHub failed; cloud-init tries `up -d` three times a minute apart,
+the daily update tries again, and `cd /opt/nycmsa && docker compose up
+-d` by hand starts the stopped `init` at once.
 The backups directory is on the same disk as the database, so copy the
 dumps elsewhere (DigitalOcean Spaces, or `scp` to your machine). Enable
 DigitalOcean's own Droplet backups for a whole-disk fallback.
