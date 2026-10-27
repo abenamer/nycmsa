@@ -139,6 +139,7 @@ explicitly. The picker table now shares the scan page's sort script
 | Revision | Run | Outcome |
 | --- | --- | --- |
 | adf9f22 (pull request 1, 2026-10-27) | GitHub Actions run 40453826962 (pull request) and 40453821113 (push) | Passed: `docs`, `rust` (fmt, check, clippy, tests, both PostgreSQL integration tests against the `postgres:17` service, `cargo audit`), `docker` (image build and `sim --trials 1000`) |
+| 93a411c (pull request 2, 2026-10-27) | GitHub Actions run 40456654387 (pull request) and 40456650876 (push) | Passed: the same three jobs |
 
 The two earlier pushes on the same pull request failed in `rust`; the
 local-evidence table above records why and the fix for each. A commit
