@@ -1,0 +1,63 @@
+#cloud-config
+# Paste this as "User data" when creating an Ubuntu 24.04 Droplet. It
+# installs Docker, opens only SSH, HTTP and HTTPS, downloads the
+# deployment files from the main branch, generates a database password,
+# starts the stack, and schedules the daily backup and image update.
+# First start takes about ten minutes: Docker install, image pull, and
+# `nycmsa bootstrap` downloading the catalog, scores, and profiles.
+# Progress: tail -f /var/log/cloud-init-output.log
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+  - ufw
+  - unattended-upgrades
+
+swap:
+  filename: /swapfile
+  size: 1G
+  maxsize: 1G
+
+write_files:
+  - path: /etc/apt/apt.conf.d/52nycmsa-unattended
+    content: |
+      Unattended-Upgrade::Automatic-Reboot "true";
+      Unattended-Upgrade::Automatic-Reboot-Time "05:30";
+
+runcmd:
+  # Firewall: SSH, HTTP, HTTPS only. Docker publishes 80 and 443 itself.
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow OpenSSH
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw allow 443/udp
+  - ufw --force enable
+  # Docker from the official repository.
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - sh -c 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list'
+  # The lock timeout waits out unattended-upgrades on first boot.
+  - apt-get -o DPkg::Lock::Timeout=600 update
+  - apt-get -o DPkg::Lock::Timeout=600 install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  # Deployment files from the repository's main branch.
+  - mkdir -p /opt/nycmsa
+  - curl -fsSL https://raw.githubusercontent.com/abenamer/nycmsa/main/deploy/compose.yaml -o /opt/nycmsa/compose.yaml
+  - curl -fsSL https://raw.githubusercontent.com/abenamer/nycmsa/main/deploy/Caddyfile -o /opt/nycmsa/Caddyfile
+  - curl -fsSL https://raw.githubusercontent.com/abenamer/nycmsa/main/deploy/update.sh -o /opt/nycmsa/update.sh
+  - curl -fsSL https://raw.githubusercontent.com/abenamer/nycmsa/main/deploy/backup.sh -o /opt/nycmsa/backup.sh
+  - chmod 0755 /opt/nycmsa/update.sh /opt/nycmsa/backup.sh
+  # A random database password and plain HTTP until a hostname is set.
+  - sh -c 'printf "POSTGRES_PASSWORD=%s\nSITE_ADDRESS=:80\n" "$(openssl rand -hex 24)" > /opt/nycmsa/.env'
+  - chmod 0600 /opt/nycmsa/.env
+  # Three attempts: bootstrap downloads from MySchools, NYC Open Data and
+  # InfoHub, and a failed download leaves `init` stopped. `up -d` starts
+  # it again on the next attempt, and update.sh does so daily after that.
+  - cd /opt/nycmsa && for i in 1 2 3; do docker compose up -d && break; echo "attempt $i failed; retrying in 60 s"; sleep 60; done
+  # Daily database dump at 03:10 and image update at 04:17, server time (UTC).
+  - sh -c 'printf "10 3 * * * root /opt/nycmsa/backup.sh >> /var/log/nycmsa-backup.log 2>&1\n17 4 * * * root /opt/nycmsa/update.sh >> /var/log/nycmsa-update.log 2>&1\n" > /etc/cron.d/nycmsa'
+  - chmod 0644 /etc/cron.d/nycmsa
+
+final_message: "nycmsa: cloud-init finished after $UPTIME seconds; run 'cd /opt/nycmsa && docker compose ps' to check the stack"

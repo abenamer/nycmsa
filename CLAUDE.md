@@ -15,3 +15,7 @@ This project follows [REAS](https://github.com/abenamer/reas). Start at
 8. Record evidence in `docs/self-audit.md`: what ran, when, on which revision.
 9. Do not claim passing checks or STE compliance without evidence.
 10. Keep `data/programs.json` compatible with the Python original's shape.
+11. Work through pull requests into `main` with a code review and a
+    security review on each. Commits may carry a `Co-Authored-By` trailer
+    but never a `Claude-Session` trailer, and pull requests and comments
+    never link to a Claude session: the link works only for its owner.

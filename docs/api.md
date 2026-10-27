@@ -9,10 +9,11 @@ tags: [api, http, cli]
 
 ## Access
 
-Every endpoint is anonymous, stateless, and meant to be public behind a
-reverse proxy. The server binds to `127.0.0.1:8080` unless `--bind` says
-otherwise. It sets no cookies and stores nothing a visitor submits: a
-simulation request is answered and forgotten
+Every endpoint is anonymous, stateless, and meant to be public: the
+deployment in `deploy/` serves the app to everyone behind Caddy. The
+server binds to `127.0.0.1:8080` unless `--bind` says otherwise. It
+sets no cookies and stores nothing a visitor submits: a simulation
+request is answered and forgotten
 ([ADR 0005](decisions/0005-no-user-input-on-the-server.md)). There is no
 endpoint that lists or replays earlier requests.
 
