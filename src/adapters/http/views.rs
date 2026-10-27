@@ -295,11 +295,8 @@ pub struct PickRow {
     pub focus_labels: String,
     pub seats: String,
     pub applicants: String,
-    pub ela: String,
-    /// The unrounded figure for sorting; empty when unknown.
-    pub ela_sort: String,
-    pub math: String,
-    pub math_sort: String,
+    pub ela: ScoreCell,
+    pub math: ScoreCell,
 }
 
 #[derive(Template)]
@@ -328,8 +325,6 @@ impl PickerPage {
                 let program = definitions.get(&p.code)?;
                 let scores = state.scan.scores_for(&p.dbn);
                 let focus = state.profiles.tags(p.code.as_str());
-                let (ela, ela_sort) = score(scores.and_then(|s| s.ela_proficient_pct));
-                let (math, math_sort) = score(scores.and_then(|s| s.math_proficient_pct));
                 Some(PickRow {
                     code: p.code.to_string(),
                     district: p.district.to_string(),
@@ -346,10 +341,8 @@ impl PickerPage {
                         .join(", "),
                     seats: opt(p.seats),
                     applicants: opt(p.applicants),
-                    ela,
-                    ela_sort,
-                    math,
-                    math_sort,
+                    ela: ScoreCell::new(scores.and_then(|s| s.ela_proficient_pct)),
+                    math: ScoreCell::new(scores.and_then(|s| s.math_proficient_pct)),
                 })
             })
             .collect();
@@ -723,10 +716,8 @@ pub struct ScanRowView {
     pub outlook_class: &'static str,
     /// Rank of the outlook for sorting: best first.
     pub outlook_sort: u8,
-    pub ela: String,
-    pub ela_sort: String,
-    pub math: String,
-    pub math_sort: String,
+    pub ela: ScoreCell,
+    pub math: ScoreCell,
 }
 
 fn outlook(reach: Reach) -> (&'static str, &'static str, u8) {
@@ -742,10 +733,24 @@ fn outlook(reach: Reach) -> (&'static str, &'static str, u8) {
 }
 
 /// `71.5` as `72%`, or empty when unknown.
-fn score(value: Option<f64>) -> (String, String) {
-    match value {
-        Some(v) => (format!("{}%", v.round() as i64), format!("{v}")),
-        None => (String::new(), String::new()),
+/// A test score as a table cell: the rounded text shown and the
+/// unrounded value the sort script reads from `data-v`. Both are empty
+/// when the figure is unknown, which the script sorts last.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ScoreCell {
+    pub shown: String,
+    pub raw: String,
+}
+
+impl ScoreCell {
+    pub fn new(value: Option<f64>) -> Self {
+        match value {
+            Some(v) => Self {
+                shown: format!("{}%", v.round() as i64),
+                raw: format!("{v}"),
+            },
+            None => Self::default(),
+        }
     }
 }
 
@@ -838,8 +843,6 @@ impl ScanPage {
 
     fn row(r: &ScanRow) -> ScanRowView {
         let (outlook, outlook_class, outlook_sort) = outlook(r.reach);
-        let (ela, ela_sort) = score(r.scores.and_then(|s| s.ela_proficient_pct));
-        let (math, math_sort) = score(r.scores.and_then(|s| s.math_proficient_pct));
         let last_year = match (r.group_applied, r.group_offered) {
             (Some(applied), Some(offered)) => format!("{offered} of {applied} got offers"),
             (Some(applied), None) => format!("{applied} applied; offers not published"),
@@ -859,10 +862,8 @@ impl ScanPage {
             outlook,
             outlook_class,
             outlook_sort,
-            ela,
-            ela_sort,
-            math,
-            math_sort,
+            ela: ScoreCell::new(r.scores.and_then(|s| s.ela_proficient_pct)),
+            math: ScoreCell::new(r.scores.and_then(|s| s.math_proficient_pct)),
         }
     }
 }

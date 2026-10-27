@@ -47,8 +47,8 @@
       <td>{{ r.group }}</td>
       <td data-v="{{ r.share_sort }}">{{ r.last_year }}</td>
       <td data-v="{{ r.outlook_sort }}"><span class="badge {{ r.outlook_class }}">{{ r.outlook }}</span></td>
-      <td class="num" data-v="{{ r.ela_sort }}">{{ r.ela }}</td>
-      <td class="num" data-v="{{ r.math_sort }}">{{ r.math }}</td>
+      <td class="num" data-v="{{ r.ela.raw }}">{{ r.ela.shown }}</td>
+      <td class="num" data-v="{{ r.math.raw }}">{{ r.math.shown }}</td>
     </tr>
   {% endfor %}
   </tbody>

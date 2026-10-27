@@ -58,8 +58,8 @@
       <td><a href="/profiles?district={{ r.district }}#{{ r.code }}" class="muted">{{ r.focus_labels }}</a></td>
       <td class="num" data-v="{{ r.seats }}">{{ r.seats }}</td>
       <td class="num" data-v="{{ r.applicants }}">{{ r.applicants }}</td>
-      <td class="num" data-v="{{ r.ela_sort }}">{{ r.ela }}</td>
-      <td class="num" data-v="{{ r.math_sort }}">{{ r.math }}</td>
+      <td class="num" data-v="{{ r.ela.raw }}">{{ r.ela.shown }}</td>
+      <td class="num" data-v="{{ r.math.raw }}">{{ r.math.shown }}</td>
     </tr>
   {% endfor %}
   </tbody>

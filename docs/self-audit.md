@@ -131,6 +131,8 @@ explicitly. The picker table now shares the scan page's sort script
 | `cargo fmt`, `clippy -D warnings`, `cargo test` | Passed: 106 unit tests, 14 HTTP tests; 2 ignored |
 | `python scripts/check_docs.py` | Passed |
 | Browser check with Playwright (Chromium) against `nycmsa serve` on the local database, 662 programs | Passed: the move-up button's computed color is the ink color `rgb(27, 31, 36)` on a transparent background; moving the second chosen program up swaps the two and the order survives a reload; two clicks on "Seats" sort 662 rows descending (581, 392, 385, ...) with the header marked `desc`; one click on "ELA" sorts ascending from 8.5% to 97.9% with the blank cells last. The script is not checked in; it lives in the session's scratch directory. |
+| Code review on pull request 2 | Five findings, all applied: the arrow styling is scoped to the move buttons so × keeps its own look; the sort script uses the column's `cellIndex`, computes each row's key once, and takes Enter or Space on a focused heading with `aria-sort`; one `ScoreCell { shown, raw }` type serves both the scan and picker rows. |
+| Browser check after the review fixes | Passed: × is muted grey at 1.1rem and turns red on hover; the arrows are ink at 0.8rem; focusing "Seats" and pressing Enter twice sorts 662 rows descending with `aria-sort="descending"`, `tabindex="0"` and `role="button"`; Space on "ELA" sorts ascending with blanks last and clears the "Seats" marker; the scan page's "Seats" heading still sorts 642 rows. |
 
 ## Remote evidence
 
